@@ -4,7 +4,7 @@ export const metadata = {
   title: "Malachi Chess",
   description: "משחק שחמט אונליין",
   icons: {
-    icon: "/chess.ico",
+    icon: "/favicon.ico",
   },
 };
 
