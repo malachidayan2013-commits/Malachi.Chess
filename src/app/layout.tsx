@@ -1,16 +1,20 @@
 import "./globals.css";
-import type { Metadata } from "next";
 
-export const metadata: Metadata = {
-  title: "אתר שחמט",
-  description: "פרויקט שחמט של מלאכי"
+export const metadata = {
+  title: "Malachi Chess",
+  description: "משחק שחמט אונליין",
+  icons: {
+    icon: "/favicon.ico",
+  },
 };
 
 export default function RootLayout({
-  children
-}: Readonly<{ children: React.ReactNode }>) {
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <html lang="he" dir="rtl">
+    <html lang="he">
       <body>{children}</body>
     </html>
   );
