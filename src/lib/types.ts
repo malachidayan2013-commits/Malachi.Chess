@@ -210,3 +210,10 @@ export default function GameSidebar({
     </div>
   );
 }
+export type MoveEntry = {
+  from: string;
+  to: string;
+  san: string;
+  piece: string;
+  color: 'w' | 'b';
+};
