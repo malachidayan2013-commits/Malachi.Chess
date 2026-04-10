@@ -1,0 +1,33 @@
+:root {
+  --bg: #f8f7f3;
+  --surface: #ffffff;
+  --surface-soft: #f3f1eb;
+  --text: #1f1f1f;
+  --muted: #6f6a63;
+  --border: #ddd7ca;
+  --brown: #8b5e3c;
+  --brown-dark: #5a3d28;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+a {
+  color: inherit;
+}
+
+button,
+input {
+  font: inherit;
+}
