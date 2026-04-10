@@ -6,17 +6,17 @@ const ALL_USERS_KEY = "chess-site-all-users";
 
 export function getStoredUsername(): string {
   if (typeof window === "undefined") return "";
-  return localStorage.getItem(USERNAME_KEY) || "";
+  return sessionStorage.getItem(USERNAME_KEY) || "";
 }
 
 export function setStoredUsername(username: string): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem(USERNAME_KEY, username);
+  sessionStorage.setItem(USERNAME_KEY, username);
 }
 
 export function clearStoredUsername(): void {
   if (typeof window === "undefined") return;
-  localStorage.removeItem(USERNAME_KEY);
+  sessionStorage.removeItem(USERNAME_KEY);
 }
 
 export function getStoredTheme(): "light" | "dark" {
@@ -28,6 +28,11 @@ export function getStoredTheme(): "light" | "dark" {
 export function setStoredTheme(theme: "light" | "dark"): void {
   if (typeof window === "undefined") return;
   localStorage.setItem(THEME_KEY, theme);
+}
+
+export function applyTheme(theme: "light" | "dark"): void {
+  if (typeof window === "undefined") return;
+  document.documentElement.setAttribute("data-theme", theme);
 }
 
 export function getAllUsers(): string[] {
@@ -45,7 +50,6 @@ export function getAllUsers(): string[] {
 export function userExists(username: string): boolean {
   const normalized = username.trim();
   if (!normalized) return false;
-
   return getAllUsers().includes(normalized);
 }
 

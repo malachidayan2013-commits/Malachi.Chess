@@ -5,7 +5,7 @@ import { Chess, type Square as SquareName } from "chess.js";
 import Square from "./Square";
 import PromotionModal from "./PromotionModal";
 import { socket } from "../lib/socket";
-import type { PlayerColor, RoomSnapshot } from "../lib/types";
+import type { MoveEntry, PlayerColor, RoomSnapshot } from "../lib/types";
 
 type PieceColor = "white" | "brown";
 type PieceType = "king" | "queen" | "rook" | "bishop" | "knight" | "pawn";
@@ -97,24 +97,94 @@ const files = ["a", "b", "c", "d", "e", "f", "g", "h"];
 export default function ChessBoard({
   roomId,
   snapshot,
-  playerColor
+  playerColor,
+  isDemoRoom,
+  onDemoMovesChange,
+  onDemoResultChange
 }: {
   roomId: string;
   snapshot: RoomSnapshot;
   playerColor: PlayerColor;
+  isDemoRoom: boolean;
+  onDemoMovesChange?: (moves: MoveEntry[]) => void;
+  onDemoResultChange?: (result: string) => void;
 }) {
   const [selectedSquare, setSelectedSquare] = useState<SquareName | null>(null);
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion>(null);
+  const [localDemoChess, setLocalDemoChess] = useState<Chess | null>(
+    isDemoRoom ? new Chess(snapshot.fen) : null
+  );
+  const [localDemoLastMove, setLocalDemoLastMove] = useState<{ from: string; to: string } | null>(null);
+  const [localDemoMoves, setLocalDemoMoves] = useState<MoveEntry[]>([]);
+  const [moveAudio, setMoveAudio] = useState<HTMLAudioElement | null>(null);
 
-  const chess = useMemo(() => new Chess(snapshot.fen), [snapshot.fen]);
-  const board = useMemo(() => getBoardFromFen(snapshot.fen), [snapshot.fen]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const audio = new Audio(
+      "data:audio/wav;base64,UklGRlQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YTAAAAA="
+    );
+    setMoveAudio(audio);
+  }, []);
+
+  useEffect(() => {
+    if (isDemoRoom && onDemoMovesChange) {
+      onDemoMovesChange(localDemoMoves);
+    }
+  }, [localDemoMoves, isDemoRoom, onDemoMovesChange]);
+
+  const effectiveFen = isDemoRoom
+    ? localDemoChess?.fen() || snapshot.fen
+    : snapshot.fen;
+
+  const chess = useMemo(() => new Chess(effectiveFen), [effectiveFen]);
+  const board = useMemo(() => getBoardFromFen(effectiveFen), [effectiveFen]);
+
+  const effectiveTurn = isDemoRoom
+    ? (chess.turn() === "w" ? "white" : "black")
+    : snapshot.turn;
+
+  const effectiveLastMove = isDemoRoom ? localDemoLastMove : snapshot.lastMove;
+  const effectiveInCheck = isDemoRoom ? chess.inCheck() : snapshot.inCheck;
+  const effectiveIsCheckmate = isDemoRoom ? chess.isCheckmate() : snapshot.isCheckmate;
+  const effectiveIsDraw = isDemoRoom ? chess.isDraw() : snapshot.isDraw;
+  const effectiveResultText = isDemoRoom
+    ? effectiveIsCheckmate
+      ? effectiveTurn === "white"
+        ? "שחור ניצח במט"
+        : "לבן ניצח במט"
+      : effectiveIsDraw
+      ? "המשחק הסתיים בתיקו"
+      : ""
+    : snapshot.resultText;
+
+  useEffect(() => {
+    if (isDemoRoom && onDemoResultChange) {
+      onDemoResultChange(effectiveResultText);
+    }
+  }, [effectiveResultText, isDemoRoom, onDemoResultChange]);
+
+  const isMyTurn = isDemoRoom ? true : effectiveTurn === playerColor;
+  const isBoardFlipped = isDemoRoom ? false : playerColor === "black";
+
+  const displayedRows = useMemo(() => {
+    if (!isBoardFlipped) {
+      return board;
+    }
+
+    return [...board].reverse().map((row) => [...row].reverse());
+  }, [board, isBoardFlipped]);
 
   useEffect(() => {
     setSelectedSquare(null);
     setPendingPromotion(null);
-  }, [snapshot.fen]);
+  }, [effectiveFen, effectiveTurn]);
 
-  const isMyTurn = snapshot.turn === playerColor;
+  useEffect(() => {
+    if (effectiveLastMove && moveAudio) {
+      moveAudio.currentTime = 0;
+      void moveAudio.play().catch(() => {});
+    }
+  }, [effectiveLastMove, moveAudio]);
 
   const legalMoves = useMemo(() => {
     if (!selectedSquare || !isMyTurn) return [];
@@ -141,7 +211,7 @@ export default function ChessBoard({
   }, [legalMoves]);
 
   const checkSquare = useMemo(() => {
-    if (!snapshot.inCheck) return null;
+    if (!effectiveInCheck) return null;
 
     const currentTurn = chess.turn();
     const kingSquare = chess
@@ -155,33 +225,65 @@ export default function ChessBoard({
       .find((item) => item.piece?.type === "k" && item.piece?.color === currentTurn);
 
     return kingSquare?.square ?? null;
-  }, [chess, snapshot.inCheck]);
+  }, [chess, effectiveInCheck]);
 
   const statusText = useMemo(() => {
-    if (snapshot.isCheckmate) {
-      return snapshot.turn === "white" ? "מט! שחור ניצח" : "מט! לבן ניצח";
+    if (effectiveIsCheckmate) {
+      return effectiveTurn === "white" ? "מט! שחור ניצח" : "מט! לבן ניצח";
     }
 
-    if (snapshot.isDraw) {
+    if (effectiveIsDraw) {
       return "המשחק הסתיים בתיקו";
     }
 
+    if (isDemoRoom) {
+      return effectiveTurn === "white" ? "תור הלבן" : "תור השחור";
+    }
+
     return isMyTurn ? "התור שלך" : "ממתין ליריב";
-  }, [snapshot, isMyTurn]);
+  }, [effectiveIsCheckmate, effectiveIsDraw, effectiveTurn, isMyTurn, isDemoRoom]);
 
   const gameOverText = useMemo(() => {
-    if (snapshot.isCheckmate) {
-      return snapshot.turn === "white" ? "שחור ניצח!" : "לבן ניצח!";
+    if (effectiveResultText) {
+      return effectiveResultText;
     }
+    return "";
+  }, [effectiveResultText]);
 
-    if (snapshot.isDraw) {
-      return "תיקו";
-    }
+  function applyDemoMove(from: SquareName, to: SquareName, promotion?: PromotionChoice) {
+    if (!localDemoChess) return;
 
-    return null;
-  }, [snapshot]);
+    const nextChess = new Chess(localDemoChess.fen());
+
+    const result = nextChess.move({
+      from,
+      to,
+      ...(promotion ? { promotion: promotionToChessLetter(promotion) } : {})
+    });
+
+    if (!result) return;
+
+    setLocalDemoChess(nextChess);
+    setLocalDemoLastMove({ from: result.from, to: result.to });
+    setLocalDemoMoves((prev) => [
+      ...prev,
+      {
+        from: result.from,
+        to: result.to,
+        san: result.san,
+        color: result.color === "w" ? "white" : "black"
+      }
+    ]);
+    setSelectedSquare(null);
+    setPendingPromotion(null);
+  }
 
   function sendMove(from: SquareName, to: SquareName, promotion?: PromotionChoice) {
+    if (isDemoRoom) {
+      applyDemoMove(from, to, promotion);
+      return;
+    }
+
     socket.emit("room:move", {
       roomId,
       from,
@@ -198,13 +300,13 @@ export default function ChessBoard({
     sendMove(pendingPromotion.from, pendingPromotion.to, piece);
   }
 
-  function handleSquareClick(rowIndex: number, colIndex: number) {
+  function handleSquareClick(realRowIndex: number, realColIndex: number) {
     if (pendingPromotion) return;
     if (!isMyTurn) return;
-    if (snapshot.isCheckmate || snapshot.isDraw) return;
+    if (effectiveIsCheckmate || effectiveIsDraw || effectiveResultText) return;
 
-    const clickedSquare = toSquareName(rowIndex, colIndex);
-    const clickedPiece = board[rowIndex][colIndex];
+    const clickedSquare = toSquareName(realRowIndex, realColIndex);
+    const clickedPiece = board[realRowIndex][realColIndex];
     const clickedMove = moveMap.get(clickedSquare);
 
     if (selectedSquare === clickedSquare) {
@@ -235,13 +337,26 @@ export default function ChessBoard({
       return;
     }
 
-    const pieceBelongsToPlayer =
-      (playerColor === "white" && clickedPiece.color === "white") ||
-      (playerColor === "black" && clickedPiece.color === "brown");
+    if (!isDemoRoom) {
+      const pieceBelongsToPlayer =
+        (playerColor === "white" && clickedPiece.color === "white") ||
+        (playerColor === "black" && clickedPiece.color === "brown");
 
-    if (!pieceBelongsToPlayer) {
-      setSelectedSquare(null);
-      return;
+      if (!pieceBelongsToPlayer) {
+        setSelectedSquare(null);
+        return;
+      }
+    }
+
+    if (isDemoRoom) {
+      const pieceBelongsToCurrentTurn =
+        (effectiveTurn === "white" && clickedPiece.color === "white") ||
+        (effectiveTurn === "black" && clickedPiece.color === "brown");
+
+      if (!pieceBelongsToCurrentTurn) {
+        setSelectedSquare(null);
+        return;
+      }
     }
 
     setSelectedSquare(clickedSquare);
@@ -254,9 +369,10 @@ export default function ChessBoard({
           style={{
             padding: "10px 18px",
             borderRadius: 12,
-            background: "#fff",
-            border: "1px solid #d8d8d8",
-            fontWeight: 700
+            background: "var(--bg-elevated)",
+            border: "1px solid var(--border)",
+            fontWeight: 700,
+            color: "var(--text)"
           }}
         >
           {statusText}
@@ -271,30 +387,44 @@ export default function ChessBoard({
             width: "fit-content"
           }}
         >
-          {board.flatMap((row, rowIndex) =>
-            row.map((piece, colIndex) => {
-              const squareName = toSquareName(rowIndex, colIndex);
+          {displayedRows.flatMap((row, displayRowIndex) =>
+            row.map((piece, displayColIndex) => {
+              const realRowIndex = isBoardFlipped ? 7 - displayRowIndex : displayRowIndex;
+              const realColIndex = isBoardFlipped ? 7 - displayColIndex : displayColIndex;
+
+              const squareName = toSquareName(realRowIndex, realColIndex);
               const moveInfo = moveMap.get(squareName);
 
-              const fileLabel = rowIndex === 7 ? files[colIndex] : undefined;
-              const rankLabel = colIndex === 7 ? String(8 - rowIndex) : undefined;
+              const fileLabel =
+                displayRowIndex === 7
+                  ? isBoardFlipped
+                    ? files[7 - displayColIndex]
+                    : files[displayColIndex]
+                  : undefined;
+
+              const rankLabel =
+                displayColIndex === 7
+                  ? isBoardFlipped
+                    ? String(realRowIndex + 1)
+                    : String(8 - realRowIndex)
+                  : undefined;
 
               return (
                 <Square
-                  key={`${rowIndex}-${colIndex}`}
-                  isDark={(rowIndex + colIndex) % 2 === 1}
+                  key={`${realRowIndex}-${realColIndex}`}
+                  isDark={(realRowIndex + realColIndex) % 2 === 1}
                   piece={piece}
                   selected={selectedSquare === squareName}
                   canMove={moveInfo?.canMove ?? false}
                   canCapture={moveInfo?.canCapture ?? false}
                   inCheck={checkSquare === squareName}
                   isLastMove={
-                    snapshot.lastMove?.from === squareName ||
-                    snapshot.lastMove?.to === squareName
+                    effectiveLastMove?.from === squareName ||
+                    effectiveLastMove?.to === squareName
                   }
                   fileLabel={fileLabel}
                   rankLabel={rankLabel}
-                  onClick={() => handleSquareClick(rowIndex, colIndex)}
+                  onClick={() => handleSquareClick(realRowIndex, realColIndex)}
                 />
               );
             })
@@ -313,13 +443,13 @@ export default function ChessBoard({
             >
               <div
                 style={{
-                  background: "#ffffff",
-                  color: "#111",
+                  background: "var(--bg-elevated)",
+                  color: "var(--text)",
                   padding: "24px 32px",
                   borderRadius: 18,
                   fontSize: "2rem",
                   fontWeight: 800,
-                  boxShadow: "0 20px 50px rgba(0,0,0,0.3)"
+                  boxShadow: "var(--shadow)"
                 }}
               >
                 {gameOverText}

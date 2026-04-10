@@ -11,8 +11,15 @@ const {
   getUserByName,
   getPublicUsers,
   createInvite,
+  cancelInvite,
   acceptInvite,
-  rejectInvite
+  rejectInvite,
+  resignRoom,
+  offerDraw,
+  acceptDraw,
+  declineDraw,
+  offerRematch,
+  declineRematch
 } = require("./src/server/state");
 
 const dev = process.env.NODE_ENV !== "production";
@@ -32,7 +39,6 @@ app.prepare().then(() => {
   io.on("connection", (socket) => {
     socket.on("user:register", ({ username }, callback) => {
       const result = registerUser(username, socket.id);
-
       if (callback) callback(result);
       io.emit("users:update", getPublicUsers());
     });
@@ -83,6 +89,21 @@ app.prepare().then(() => {
           inviteId: result.invite.id
         });
       }
+    });
+
+    socket.on("invite:cancel", ({ inviteId }, callback) => {
+      const result = cancelInvite(inviteId, socket.id);
+
+      if (!result.ok) {
+        if (callback) callback(result);
+        return;
+      }
+
+      io.to(result.invite.toSocketId).emit("invite:cancelled", {
+        inviteId: result.invite.id
+      });
+
+      if (callback) callback({ ok: true });
     });
 
     socket.on("invite:accept", ({ inviteId }, callback) => {
@@ -171,6 +192,108 @@ app.prepare().then(() => {
           snapshot
         });
       }
+    });
+
+    socket.on("room:resign", ({ roomId }, callback) => {
+      const result = resignRoom({
+        roomId,
+        socketId: socket.id
+      });
+
+      if (!result.ok) {
+        if (callback) callback(result);
+        return;
+      }
+
+      const snapshot = getRoomSnapshot(roomId);
+      io.to(roomId).emit("room:update", snapshot);
+
+      if (callback) callback({ ok: true, snapshot });
+    });
+
+    socket.on("room:offer-draw", ({ roomId }, callback) => {
+      const result = offerDraw({
+        roomId,
+        socketId: socket.id
+      });
+
+      if (!result.ok) {
+        if (callback) callback(result);
+        return;
+      }
+
+      const snapshot = getRoomSnapshot(roomId);
+      io.to(roomId).emit("room:update", snapshot);
+
+      if (callback) callback({ ok: true, snapshot });
+    });
+
+    socket.on("room:accept-draw", ({ roomId }, callback) => {
+      const result = acceptDraw({
+        roomId,
+        socketId: socket.id
+      });
+
+      if (!result.ok) {
+        if (callback) callback(result);
+        return;
+      }
+
+      const snapshot = getRoomSnapshot(roomId);
+      io.to(roomId).emit("room:update", snapshot);
+
+      if (callback) callback({ ok: true, snapshot });
+    });
+
+    socket.on("room:decline-draw", ({ roomId }, callback) => {
+      const result = declineDraw({
+        roomId,
+        socketId: socket.id
+      });
+
+      if (!result.ok) {
+        if (callback) callback(result);
+        return;
+      }
+
+      const snapshot = getRoomSnapshot(roomId);
+      io.to(roomId).emit("room:update", snapshot);
+
+      if (callback) callback({ ok: true, snapshot });
+    });
+
+    socket.on("room:offer-rematch", ({ roomId }, callback) => {
+      const result = offerRematch({
+        roomId,
+        socketId: socket.id
+      });
+
+      if (!result.ok) {
+        if (callback) callback(result);
+        return;
+      }
+
+      const snapshot = getRoomSnapshot(roomId);
+      io.to(roomId).emit("room:update", snapshot);
+
+      if (callback) callback({ ok: true, snapshot, restarted: !!result.restarted });
+    });
+
+    socket.on("room:decline-rematch", ({ roomId }, callback) => {
+      const result = declineRematch({
+        roomId,
+        socketId: socket.id
+      });
+
+      if (!result.ok) {
+        if (callback) callback(result);
+        return;
+      }
+
+      const snapshot = getRoomSnapshot(roomId);
+      io.to(roomId).emit("room:update", snapshot);
+
+      if (callback) callback({ ok: true, snapshot });
     });
 
     socket.on("disconnect", () => {

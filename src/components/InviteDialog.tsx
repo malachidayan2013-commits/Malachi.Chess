@@ -24,18 +24,20 @@ export default function InviteDialog({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        zIndex: 2000
+        zIndex: 2000,
+        padding: 24
       }}
     >
       <div
         style={{
           width: "100%",
           maxWidth: 420,
-          background: "#ffffff",
+          background: "var(--bg-elevated)",
           borderRadius: 20,
           padding: 24,
-          boxShadow: "0 20px 50px rgba(0,0,0,0.25)",
-          border: "1px solid #ddd"
+          boxShadow: "var(--shadow)",
+          border: "1px solid var(--border)",
+          color: "var(--text)"
         }}
       >
         <div
@@ -50,7 +52,7 @@ export default function InviteDialog({
 
         <div
           style={{
-            color: "#555",
+            color: "var(--text-soft)",
             lineHeight: 1.7,
             marginBottom: 18
           }}
@@ -67,7 +69,7 @@ export default function InviteDialog({
               height: 48,
               borderRadius: 12,
               border: "none",
-              background: "#1f6f43",
+              background: "var(--accent-strong)",
               color: "#fff",
               fontWeight: 700,
               cursor: "pointer"
@@ -83,9 +85,9 @@ export default function InviteDialog({
               flex: 1,
               height: 48,
               borderRadius: 12,
-              border: "1px solid #ddd",
-              background: "#fff",
-              color: "#b42318",
+              border: "1px solid var(--border)",
+              background: "var(--bg-elevated)",
+              color: "var(--danger)",
               fontWeight: 700,
               cursor: "pointer"
             }}

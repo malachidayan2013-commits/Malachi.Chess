@@ -22,7 +22,11 @@ function createRoom(roomId) {
     chess: new Chess(),
     white: null,
     black: null,
-    lastMove: null
+    lastMove: null,
+    moves: [],
+    resultText: "",
+    drawOfferBy: null,
+    rematchOfferedBy: null
   };
 }
 
@@ -89,6 +93,21 @@ function getUserByName(username) {
   return usersByName.get(normalize(username)) || null;
 }
 
+function hasPendingInviteBetween(fromUsername, toUsername) {
+  for (const invite of invitesById.values()) {
+    const sameDirection =
+      invite.fromUsername === fromUsername && invite.toUsername === toUsername;
+    const reverseDirection =
+      invite.fromUsername === toUsername && invite.toUsername === fromUsername;
+
+    if (sameDirection || reverseDirection) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function createInvite(fromUsername, toUsername) {
   const fromUser = getUserByName(fromUsername);
   const toUser = getUserByName(toUsername);
@@ -97,6 +116,10 @@ function createInvite(fromUsername, toUsername) {
   if (!toUser) return { ok: false, message: "החבר אינו מחובר." };
   if (fromUser.username === toUser.username) {
     return { ok: false, message: "לא ניתן להזמין את עצמך." };
+  }
+
+  if (hasPendingInviteBetween(fromUser.username, toUser.username)) {
+    return { ok: false, message: "כבר קיימת הזמנה פתוחה ביניכם." };
   }
 
   const invite = {
@@ -117,6 +140,17 @@ function createInvite(fromUsername, toUsername) {
   };
 }
 
+function cancelInvite(inviteId, socketId) {
+  const invite = invitesById.get(inviteId);
+  if (!invite) return { ok: false, message: "ההזמנה לא נמצאה." };
+  if (invite.fromSocketId !== socketId) {
+    return { ok: false, message: "רק שולח ההזמנה יכול לבטל." };
+  }
+
+  invitesById.delete(inviteId);
+  return { ok: true, invite };
+}
+
 function acceptInvite(inviteId) {
   const invite = invitesById.get(inviteId);
   if (!invite) return { ok: false, message: "ההזמנה לא נמצאה." };
@@ -133,6 +167,20 @@ function rejectInvite(inviteId) {
   return { ok: true, invite };
 }
 
+function buildResultText(room) {
+  if (room.resultText) return room.resultText;
+
+  if (room.chess.isCheckmate()) {
+    return room.chess.turn() === "w" ? "שחור ניצח במט" : "לבן ניצח במט";
+  }
+
+  if (room.chess.isDraw()) {
+    return "המשחק הסתיים בתיקו";
+  }
+
+  return "";
+}
+
 function getRoomSnapshot(roomId) {
   const room = rooms.get(roomId);
   if (!room) return null;
@@ -146,8 +194,23 @@ function getRoomSnapshot(roomId) {
     isDraw: room.chess.isDraw(),
     lastMove: room.lastMove,
     whiteUsername: room.white?.username || "",
-    blackUsername: room.black?.username || ""
+    blackUsername: room.black?.username || "",
+    moves: room.moves,
+    resultText: buildResultText(room),
+    drawOfferBy: room.drawOfferBy,
+    rematchOfferedBy: room.rematchOfferedBy,
+    whiteConnected: !!room.white?.socketId,
+    blackConnected: !!room.black?.socketId
   };
+}
+
+function resetRoomGame(room) {
+  room.chess = new Chess();
+  room.lastMove = null;
+  room.moves = [];
+  room.resultText = "";
+  room.drawOfferBy = null;
+  room.rematchOfferedBy = null;
 }
 
 function joinRoom({ roomId, username, socketId }) {
@@ -198,6 +261,10 @@ function makeMove({ roomId, socketId, from, to, promotion }) {
   const room = rooms.get(roomId);
   if (!room) return { ok: false, message: "החדר לא קיים" };
 
+  if (room.resultText) {
+    return { ok: false, message: "המשחק כבר הסתיים" };
+  }
+
   const playerColor = getPlayerColorBySocket(room, socketId);
   if (!playerColor) return { ok: false, message: "השחקן אינו שייך לחדר" };
 
@@ -222,10 +289,123 @@ function makeMove({ roomId, socketId, from, to, promotion }) {
       to: result.to
     };
 
+    room.moves.push({
+      from: result.from,
+      to: result.to,
+      san: result.san,
+      color: result.color === "w" ? "white" : "black"
+    });
+
+    room.drawOfferBy = null;
+    room.rematchOfferedBy = null;
+
+    if (room.chess.isCheckmate()) {
+      room.resultText = room.chess.turn() === "w" ? "שחור ניצח במט" : "לבן ניצח במט";
+    } else if (room.chess.isDraw()) {
+      room.resultText = "המשחק הסתיים בתיקו";
+    }
+
     return { ok: true };
   } catch {
     return { ok: false, message: "מהלך לא חוקי" };
   }
+}
+
+function resignRoom({ roomId, socketId }) {
+  const room = rooms.get(roomId);
+  if (!room) return { ok: false, message: "החדר לא קיים" };
+  if (room.resultText) return { ok: false, message: "המשחק כבר הסתיים" };
+
+  const playerColor = getPlayerColorBySocket(room, socketId);
+  if (!playerColor) return { ok: false, message: "השחקן אינו שייך לחדר" };
+
+  room.resultText = playerColor === "white" ? "שחור ניצח בכניעה" : "לבן ניצח בכניעה";
+  room.drawOfferBy = null;
+  room.rematchOfferedBy = null;
+
+  return { ok: true };
+}
+
+function offerDraw({ roomId, socketId }) {
+  const room = rooms.get(roomId);
+  if (!room) return { ok: false, message: "החדר לא קיים" };
+  if (room.resultText) return { ok: false, message: "המשחק כבר הסתיים" };
+
+  const playerColor = getPlayerColorBySocket(room, socketId);
+  if (!playerColor) return { ok: false, message: "השחקן אינו שייך לחדר" };
+
+  room.drawOfferBy = playerColor;
+  return { ok: true };
+}
+
+function acceptDraw({ roomId, socketId }) {
+  const room = rooms.get(roomId);
+  if (!room) return { ok: false, message: "החדר לא קיים" };
+  if (room.resultText) return { ok: false, message: "המשחק כבר הסתיים" };
+
+  const playerColor = getPlayerColorBySocket(room, socketId);
+  if (!playerColor) return { ok: false, message: "השחקן אינו שייך לחדר" };
+  if (!room.drawOfferBy) return { ok: false, message: "אין הצעת תיקו פעילה" };
+  if (room.drawOfferBy === playerColor) {
+    return { ok: false, message: "לא ניתן לאשר את ההצעה של עצמך" };
+  }
+
+  room.resultText = "המשחק הסתיים בתיקו בהסכמה";
+  room.drawOfferBy = null;
+  room.rematchOfferedBy = null;
+
+  return { ok: true };
+}
+
+function declineDraw({ roomId, socketId }) {
+  const room = rooms.get(roomId);
+  if (!room) return { ok: false, message: "החדר לא קיים" };
+
+  const playerColor = getPlayerColorBySocket(room, socketId);
+  if (!playerColor) return { ok: false, message: "השחקן אינו שייך לחדר" };
+  if (!room.drawOfferBy) return { ok: false, message: "אין הצעת תיקו פעילה" };
+  if (room.drawOfferBy === playerColor) {
+    return { ok: false, message: "לא ניתן לדחות את ההצעה של עצמך" };
+  }
+
+  room.drawOfferBy = null;
+  return { ok: true };
+}
+
+function offerRematch({ roomId, socketId }) {
+  const room = rooms.get(roomId);
+  if (!room) return { ok: false, message: "החדר לא קיים" };
+  if (!room.resultText) return { ok: false, message: "ניתן לבקש משחק חוזר רק אחרי סיום משחק" };
+
+  const playerColor = getPlayerColorBySocket(room, socketId);
+  if (!playerColor) return { ok: false, message: "השחקן אינו שייך לחדר" };
+
+  if (room.rematchOfferedBy === playerColor) {
+    return { ok: false, message: "כבר שלחת בקשת משחק חוזר" };
+  }
+
+  if (room.rematchOfferedBy && room.rematchOfferedBy !== playerColor) {
+    resetRoomGame(room);
+    return { ok: true, restarted: true };
+  }
+
+  room.rematchOfferedBy = playerColor;
+  return { ok: true, restarted: false };
+}
+
+function declineRematch({ roomId, socketId }) {
+  const room = rooms.get(roomId);
+  if (!room) return { ok: false, message: "החדר לא קיים" };
+
+  const playerColor = getPlayerColorBySocket(room, socketId);
+  if (!playerColor) return { ok: false, message: "השחקן אינו שייך לחדר" };
+
+  if (!room.rematchOfferedBy || room.rematchOfferedBy === playerColor) {
+    return { ok: false, message: "אין בקשת משחק חוזר לדחות" };
+  }
+
+  room.rematchOfferedBy = null;
+  return { ok: true };
 }
 
 function leaveSocket(socketId) {
@@ -259,6 +439,13 @@ module.exports = {
   getUserByName,
   getPublicUsers,
   createInvite,
+  cancelInvite,
   acceptInvite,
-  rejectInvite
+  rejectInvite,
+  resignRoom,
+  offerDraw,
+  acceptDraw,
+  declineDraw,
+  offerRematch,
+  declineRematch
 };

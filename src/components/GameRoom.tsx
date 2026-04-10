@@ -1,19 +1,52 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import ChessBoard from "./ChessBoard";
+import GameSidebar from "./GameSidebar";
 import { socket } from "../lib/socket";
 import { getStoredUsername } from "../lib/storage";
-import type { PlayerColor, RoomSnapshot } from "../lib/types";
+import type { MoveEntry, PlayerColor, RoomSnapshot } from "../lib/types";
 
 export default function GameRoom({ roomId }: { roomId: string }) {
+  const isDemoRoom = roomId === "demo-room";
+
   const [username, setUsername] = useState("");
-  const [playerColor, setPlayerColor] = useState<PlayerColor | null>(null);
+  const [initialPlayerColor, setInitialPlayerColor] = useState<PlayerColor | null>(null);
   const [snapshot, setSnapshot] = useState<RoomSnapshot | null>(null);
   const [joinError, setJoinError] = useState("");
 
+  const [demoMoves, setDemoMoves] = useState<MoveEntry[]>([]);
+  const [demoResultText, setDemoResultText] = useState("");
+  const [demoDrawOfferBy, setDemoDrawOfferBy] = useState<PlayerColor | null>(null);
+
   useEffect(() => {
+    if (isDemoRoom) {
+      setUsername("שחקן מקומי");
+      setInitialPlayerColor("white");
+      setSnapshot({
+        roomId: "demo-room",
+        fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        turn: "white",
+        inCheck: false,
+        isCheckmate: false,
+        isDraw: false,
+        lastMove: null,
+        whiteUsername: "לבן",
+        blackUsername: "שחור",
+        moves: [],
+        resultText: "",
+        drawOfferBy: null,
+        rematchOfferedBy: null,
+        whiteConnected: true,
+        blackConnected: true
+      });
+      setDemoMoves([]);
+      setDemoResultText("");
+      setDemoDrawOfferBy(null);
+      return;
+    }
+
     const storedUsername = getStoredUsername();
 
     if (!storedUsername) {
@@ -37,7 +70,7 @@ export default function GameRoom({ roomId }: { roomId: string }) {
           return;
         }
 
-        setPlayerColor(response.playerColor || null);
+        setInitialPlayerColor(response.playerColor || null);
         setSnapshot(response.snapshot || null);
       }
     );
@@ -53,40 +86,133 @@ export default function GameRoom({ roomId }: { roomId: string }) {
     return () => {
       socket.off("room:update", handleRoomUpdate);
     };
-  }, [roomId]);
+  }, [roomId, isDemoRoom]);
 
-  const myName = username;
-  const opponentName =
-    playerColor === "white"
-      ? snapshot?.blackUsername || "ממתין ליריב"
-      : playerColor === "black"
-      ? snapshot?.whiteUsername || "ממתין ליריב"
-      : "ממתין לחיבור";
+  const effectivePlayerColor = useMemo<PlayerColor | null>(() => {
+    if (isDemoRoom) return "white";
+    if (!snapshot || !username) return initialPlayerColor;
+
+    if (snapshot.whiteUsername === username) return "white";
+    if (snapshot.blackUsername === username) return "black";
+
+    return initialPlayerColor;
+  }, [snapshot, username, initialPlayerColor, isDemoRoom]);
+
+  const safeMoves: MoveEntry[] = isDemoRoom ? demoMoves : snapshot?.moves ?? [];
+  const safeResultText = isDemoRoom ? demoResultText : snapshot?.resultText ?? "";
+  const safeDrawOfferBy = isDemoRoom ? demoDrawOfferBy : snapshot?.drawOfferBy ?? null;
+  const safeRematchOfferedBy = snapshot?.rematchOfferedBy ?? null;
+
+  const topPlayerName = useMemo(() => {
+    if (isDemoRoom) return "שחור";
+    if (!snapshot || !effectivePlayerColor) return "";
+
+    const name =
+      effectivePlayerColor === "white"
+        ? snapshot.blackUsername || ""
+        : snapshot.whiteUsername || "";
+
+    const connected =
+      effectivePlayerColor === "white"
+        ? snapshot.blackConnected
+        : snapshot.whiteConnected;
+
+    return connected ? name : `${name} (מנותק)`;
+  }, [snapshot, effectivePlayerColor, isDemoRoom]);
+
+  const bottomPlayerName = useMemo(() => {
+    if (isDemoRoom) return "לבן";
+    return username || "";
+  }, [username, isDemoRoom]);
+
+  const opponentDisconnected = useMemo(() => {
+    if (isDemoRoom || !snapshot || !effectivePlayerColor) return false;
+
+    return effectivePlayerColor === "white"
+      ? !snapshot.blackConnected
+      : !snapshot.whiteConnected;
+  }, [snapshot, effectivePlayerColor, isDemoRoom]);
+
+  function handleResign() {
+    if (isDemoRoom) {
+      setDemoResultText("המשחק הסתיים בכניעה");
+      return;
+    }
+
+    socket.emit("room:resign", { roomId });
+  }
+
+  function handleOfferDraw() {
+    if (isDemoRoom) {
+      setDemoResultText("המשחק הסתיים בתיקו בהסכמה");
+      setDemoDrawOfferBy(null);
+      return;
+    }
+
+    socket.emit("room:offer-draw", { roomId });
+  }
+
+  function handleAcceptDraw() {
+    if (isDemoRoom) {
+      setDemoResultText("המשחק הסתיים בתיקו בהסכמה");
+      setDemoDrawOfferBy(null);
+      return;
+    }
+
+    socket.emit("room:accept-draw", { roomId });
+  }
+
+  function handleDeclineDraw() {
+    if (isDemoRoom) {
+      setDemoDrawOfferBy(null);
+      return;
+    }
+
+    socket.emit("room:decline-draw", { roomId });
+  }
+
+  function handleOfferRematch() {
+    if (isDemoRoom) {
+      window.location.reload();
+      return;
+    }
+
+    socket.emit("room:offer-rematch", { roomId });
+  }
+
+  function handleDeclineRematch() {
+    if (isDemoRoom) return;
+    socket.emit("room:decline-rematch", { roomId });
+  }
 
   if (joinError) {
     return (
       <div
         style={{
           minHeight: "100vh",
-          background: "#f8f7f3",
+          background: "var(--bg)",
           padding: "32px 24px",
           direction: "rtl",
-          fontFamily: "Arial, sans-serif"
+          fontFamily: "Arial, sans-serif",
+          color: "var(--text)"
         }}
       >
         <div style={{ maxWidth: 900, margin: "0 auto" }}>
-          <Link href="/" style={{ textDecoration: "none", color: "#5a3d28", fontWeight: 700 }}>
+          <Link
+            href="/"
+            style={{ textDecoration: "none", color: "var(--accent)", fontWeight: 700 }}
+          >
             חזרה לדף הבית
           </Link>
 
           <div
             style={{
               marginTop: 20,
-              background: "#fff",
-              border: "1px solid #ddd",
+              background: "var(--bg-elevated)",
+              border: "1px solid var(--border)",
               borderRadius: 18,
               padding: 20,
-              color: "#b42318",
+              color: "var(--danger)",
               fontWeight: 700
             }}
           >
@@ -97,15 +223,16 @@ export default function GameRoom({ roomId }: { roomId: string }) {
     );
   }
 
-  if (!snapshot || !playerColor) {
+  if (!snapshot || !effectivePlayerColor) {
     return (
       <div
         style={{
           minHeight: "100vh",
-          background: "#f8f7f3",
+          background: "var(--bg)",
           padding: "32px 24px",
           direction: "rtl",
-          fontFamily: "Arial, sans-serif"
+          fontFamily: "Arial, sans-serif",
+          color: "var(--text)"
         }}
       >
         <div style={{ maxWidth: 900, margin: "0 auto" }}>טוען חדר משחק...</div>
@@ -117,13 +244,14 @@ export default function GameRoom({ roomId }: { roomId: string }) {
     <div
       style={{
         minHeight: "100vh",
-        background: "#f8f7f3",
+        background: "var(--bg)",
         padding: "32px 24px",
         direction: "rtl",
-        fontFamily: "Arial, sans-serif"
+        fontFamily: "Arial, sans-serif",
+        color: "var(--text)"
       }}
     >
-      <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto" }}>
         <div
           style={{
             display: "flex",
@@ -134,76 +262,117 @@ export default function GameRoom({ roomId }: { roomId: string }) {
           }}
         >
           <div>
-            <h1 style={{ margin: 0 }}>חדר משחק</h1>
-            <p style={{ margin: "8px 0 0", color: "#666" }}>Room ID: {roomId}</p>
+            <h1 style={{ margin: 0 }}>{isDemoRoom ? "חדר הדגמה" : "חדר משחק"}</h1>
+            <p style={{ margin: "8px 0 0", color: "var(--text-soft)" }}>Room ID: {roomId}</p>
           </div>
 
-          <Link
-            href="/"
+          <div style={{ display: "flex", gap: 10 }}>
+            <Link
+              href="/"
+              style={{
+                textDecoration: "none",
+                background: "var(--bg-elevated)",
+                border: "1px solid var(--border)",
+                color: "var(--text)",
+                padding: "12px 16px",
+                borderRadius: 12,
+                fontWeight: 700
+              }}
+            >
+              יציאה מהחדר
+            </Link>
+          </div>
+        </div>
+
+        {opponentDisconnected ? (
+          <div
             style={{
-              textDecoration: "none",
-              background: "#fff",
-              border: "1px solid #ddd",
-              color: "#222",
+              marginBottom: 16,
+              background: "var(--bg-elevated)",
+              border: "1px solid var(--border)",
+              borderRadius: 14,
               padding: "12px 16px",
-              borderRadius: 12,
+              color: "var(--danger)",
               fontWeight: 700
             }}
           >
-            חזרה לדף הבית
-          </Link>
-        </div>
+            היריב התנתק מהחדר.
+          </div>
+        ) : null}
 
         <div
           style={{
-            background: "#ffffff",
-            border: "1px solid #ddd",
-            borderRadius: 20,
-            padding: 24,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: 16
+            display: "grid",
+            gridTemplateColumns: "1fr 320px",
+            gap: 20,
+            alignItems: "start"
           }}
         >
-          <ChessBoard roomId={roomId} snapshot={snapshot} playerColor={playerColor} />
-
           <div
             style={{
-              width: 648,
+              background: "var(--bg-elevated)",
+              border: "1px solid var(--border)",
+              borderRadius: 24,
+              padding: 24,
               display: "flex",
-              justifyContent: "space-between",
-              gap: 20
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 14,
+              boxShadow: "var(--shadow)"
             }}
           >
             <div
               style={{
-                flex: 1,
-                background: "#f3f1eb",
-                border: "1px solid #ddd7ca",
+                width: 648,
+                background: "var(--bg-soft)",
+                border: "1px solid var(--border)",
                 borderRadius: 12,
                 padding: "12px 16px",
                 fontWeight: 700,
-                textAlign: "right"
+                textAlign: "center"
               }}
             >
-              {myName || "אתה"}
+              {topPlayerName}
             </div>
+
+            <ChessBoard
+              roomId={roomId}
+              snapshot={snapshot}
+              playerColor={effectivePlayerColor}
+              isDemoRoom={isDemoRoom}
+              onDemoMovesChange={setDemoMoves}
+              onDemoResultChange={setDemoResultText}
+            />
 
             <div
               style={{
-                flex: 1,
-                background: "#f3f1eb",
-                border: "1px solid #ddd7ca",
+                width: 648,
+                background: "var(--bg-soft)",
+                border: "1px solid var(--border)",
                 borderRadius: 12,
                 padding: "12px 16px",
                 fontWeight: 700,
-                textAlign: "left"
+                textAlign: "center"
               }}
             >
-              {opponentName}
+              {bottomPlayerName}
             </div>
           </div>
+
+          <GameSidebar
+            moves={safeMoves}
+            playerColor={effectivePlayerColor}
+            resultText={safeResultText}
+            drawOfferBy={safeDrawOfferBy}
+            rematchOfferedBy={safeRematchOfferedBy}
+            onResign={handleResign}
+            onOfferDraw={handleOfferDraw}
+            onAcceptDraw={handleAcceptDraw}
+            onDeclineDraw={handleDeclineDraw}
+            onOfferRematch={handleOfferRematch}
+            onDeclineRematch={handleDeclineRematch}
+            isDemoRoom={isDemoRoom}
+          />
         </div>
       </div>
     </div>

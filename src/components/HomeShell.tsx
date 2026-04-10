@@ -4,24 +4,34 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  applyTheme,
+  getStoredTheme,
   getStoredUsername,
+  setStoredTheme,
   setStoredUsername,
   clearStoredUsername
 } from "../lib/storage";
 import { socket } from "../lib/socket";
 import InviteDialog from "./InviteDialog";
+import ThemeToggle from "./ThemeToggle";
 import type {
   IncomingInvite,
   InviteAcceptedPayload,
   FriendStatusResponse,
-  UsersUpdatePayload
+  UsersUpdatePayload,
+  OutgoingInviteState
 } from "../lib/types";
 
 type AuthMode = "login" | "register";
 
+function createRoomLinkId() {
+  return `room_${Math.random().toString(36).slice(2, 10)}_${Date.now()}`;
+}
+
 export default function HomeShell() {
   const router = useRouter();
 
+  const [theme, setTheme] = useState<"light" | "dark">("light");
   const [username, setUsername] = useState("");
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<AuthMode>("login");
@@ -34,6 +44,16 @@ export default function HomeShell() {
   const [friendStatus, setFriendStatus] = useState<FriendStatusResponse | null>(null);
   const [incomingInvite, setIncomingInvite] = useState<IncomingInvite | null>(null);
   const [connectedUsers, setConnectedUsers] = useState<UsersUpdatePayload>([]);
+  const [privateRoomId, setPrivateRoomId] = useState("");
+  const [outgoingInvite, setOutgoingInvite] = useState<OutgoingInviteState | null>(null);
+  const [inviteStatusText, setInviteStatusText] = useState("");
+
+  useEffect(() => {
+    const storedTheme = getStoredTheme();
+    setTheme(storedTheme);
+    applyTheme(storedTheme);
+    setPrivateRoomId(createRoomLinkId());
+  }, []);
 
   useEffect(() => {
     const existing = getStoredUsername();
@@ -57,29 +77,45 @@ export default function HomeShell() {
     };
 
     const handleInviteAccepted = (payload: InviteAcceptedPayload) => {
+      setOutgoingInvite(null);
+      setInviteStatusText("");
       router.push(`/game/${payload.roomId}`);
     };
 
     const handleInviteRejected = () => {
-      alert("ההזמנה נדחתה.");
+      setOutgoingInvite(null);
+      setInviteStatusText("ההזמנה נדחתה.");
+    };
+
+    const handleInviteCancelled = () => {
+      setIncomingInvite(null);
     };
 
     socket.on("users:update", handleUsersUpdate);
     socket.on("invite:incoming", handleIncomingInvite);
     socket.on("invite:accepted", handleInviteAccepted);
     socket.on("invite:rejected", handleInviteRejected);
+    socket.on("invite:cancelled", handleInviteCancelled);
 
     return () => {
       socket.off("users:update", handleUsersUpdate);
       socket.off("invite:incoming", handleIncomingInvite);
       socket.off("invite:accepted", handleInviteAccepted);
       socket.off("invite:rejected", handleInviteRejected);
+      socket.off("invite:cancelled", handleInviteCancelled);
     };
   }, [router]);
 
   const authTitle = useMemo(() => {
     return authMode === "login" ? "התחברות" : "הרשמה";
   }, [authMode]);
+
+  function handleToggleTheme() {
+    const nextTheme = theme === "light" ? "dark" : "light";
+    setTheme(nextTheme);
+    setStoredTheme(nextTheme);
+    applyTheme(nextTheme);
+  }
 
   function openAuth(mode: AuthMode) {
     setAuthMode(mode);
@@ -162,6 +198,9 @@ export default function HomeShell() {
       setHoverOpen(false);
       setFriendName("");
       setFriendStatus(null);
+      setPrivateRoomId(createRoomLinkId());
+      setOutgoingInvite(null);
+      setInviteStatusText("");
     });
   }
 
@@ -183,13 +222,14 @@ export default function HomeShell() {
       { friendName: normalized },
       (response: FriendStatusResponse) => {
         setFriendStatus(response);
+        setInviteStatusText("");
       }
     );
   }
 
   function handleSendInvite() {
     const normalized = friendName.trim();
-    if (!username || !normalized) return;
+    if (!username || !normalized || outgoingInvite) return;
 
     socket.emit(
       "invite:create",
@@ -197,13 +237,35 @@ export default function HomeShell() {
         fromUsername: username,
         toUsername: normalized
       },
-      (response: { ok: boolean; message?: string }) => {
-        if (!response.ok) {
-          alert(response.message || "לא ניתן היה לשלוח הזמנה");
+      (response: { ok: boolean; message?: string; inviteId?: string }) => {
+        if (!response.ok || !response.inviteId) {
+          setInviteStatusText(response.message || "לא ניתן היה לשלוח הזמנה");
           return;
         }
 
-        alert("ההזמנה נשלחה");
+        setOutgoingInvite({
+          inviteId: response.inviteId,
+          toUsername: normalized
+        });
+        setInviteStatusText(`ההזמנה נשלחה ל־${normalized}`);
+      }
+    );
+  }
+
+  function handleCancelInvite() {
+    if (!outgoingInvite) return;
+
+    socket.emit(
+      "invite:cancel",
+      { inviteId: outgoingInvite.inviteId },
+      (response: { ok: boolean; message?: string }) => {
+        if (!response.ok) {
+          setInviteStatusText(response.message || "לא ניתן לבטל את ההזמנה");
+          return;
+        }
+
+        setOutgoingInvite(null);
+        setInviteStatusText("ההזמנה בוטלה");
       }
     );
   }
@@ -230,20 +292,31 @@ export default function HomeShell() {
     });
   }
 
+  async function handleCopyRoomLink() {
+    const url = `${window.location.origin}/game/${privateRoomId}`;
+    await navigator.clipboard.writeText(url);
+    alert("הקישור הועתק");
+  }
+
   return (
     <>
       <div
         style={{
           minHeight: "100vh",
-          background: "#f8f7f3",
+          background: "var(--bg)",
           direction: "rtl",
-          fontFamily: "Arial, sans-serif"
+          fontFamily: "Arial, sans-serif",
+          color: "var(--text)"
         }}
       >
         <div
           style={{
-            borderBottom: "1px solid #e6dfd3",
-            background: "#f8f7f3"
+            borderBottom: "1px solid var(--border)",
+            background: "var(--bg)",
+            position: "sticky",
+            top: 0,
+            zIndex: 10,
+            backdropFilter: "blur(8px)"
           }}
         >
           <div
@@ -253,97 +326,102 @@ export default function HomeShell() {
               padding: "16px 24px",
               display: "flex",
               alignItems: "center",
-              justifyContent: "space-between"
+              justifyContent: "space-between",
+              gap: 12
             }}
           >
             <div
               style={{
                 fontSize: "2rem",
                 fontWeight: 800,
-                color: "#5a3d28"
+                color: "var(--accent)"
               }}
             >
               אתר שחמט
             </div>
 
-            <div style={{ position: "relative" }}>
-              {!username ? (
-                <button
-                  type="button"
-                  onClick={() => openAuth("login")}
-                  style={{
-                    border: "none",
-                    background: "transparent",
-                    color: "#5a3d28",
-                    fontWeight: 700,
-                    fontSize: "1rem",
-                    cursor: "pointer",
-                    padding: 0
-                  }}
-                >
-                  התחברות
-                </button>
-              ) : (
-                <div
-                  onMouseEnter={() => setHoverOpen(true)}
-                  onMouseLeave={() => setHoverOpen(false)}
-                  style={{
-                    position: "relative",
-                    display: "inline-block",
-                    paddingBottom: 48
-                  }}
-                >
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <ThemeToggle theme={theme} onToggle={handleToggleTheme} />
+
+              <div style={{ position: "relative" }}>
+                {!username ? (
                   <button
                     type="button"
+                    onClick={() => openAuth("login")}
                     style={{
                       border: "none",
                       background: "transparent",
-                      color: "#1f1f1f",
+                      color: "var(--accent)",
                       fontWeight: 700,
                       fontSize: "1rem",
                       cursor: "pointer",
                       padding: 0
                     }}
                   >
-                    {username}
+                    התחברות
                   </button>
-
-                  {hoverOpen ? (
-                    <div
+                ) : (
+                  <div
+                    onMouseEnter={() => setHoverOpen(true)}
+                    onMouseLeave={() => setHoverOpen(false)}
+                    style={{
+                      position: "relative",
+                      display: "inline-block",
+                      paddingBottom: 48
+                    }}
+                  >
+                    <button
+                      type="button"
                       style={{
-                        position: "absolute",
-                        top: 28,
-                        left: 0,
-                        minWidth: 140,
-                        background: "#ffffff",
-                        border: "1px solid #ddd",
-                        borderRadius: 12,
-                        boxShadow: "0 10px 30px rgba(0,0,0,0.12)",
-                        padding: 8,
-                        zIndex: 20
+                        border: "none",
+                        background: "transparent",
+                        color: "var(--text)",
+                        fontWeight: 700,
+                        fontSize: "1rem",
+                        cursor: "pointer",
+                        padding: 0
                       }}
                     >
-                      <button
-                        type="button"
-                        onClick={handleLogout}
+                      {username}
+                    </button>
+
+                    {hoverOpen ? (
+                      <div
                         style={{
-                          width: "100%",
-                          border: "none",
-                          background: "transparent",
-                          textAlign: "right",
-                          padding: "10px 12px",
-                          borderRadius: 8,
-                          cursor: "pointer",
-                          color: "#b42318",
-                          fontWeight: 700
+                          position: "absolute",
+                          top: 28,
+                          left: 0,
+                          minWidth: 140,
+                          background: "var(--bg-elevated)",
+                          border: "1px solid var(--border)",
+                          borderRadius: 12,
+                          boxShadow: "var(--shadow)",
+                          padding: 8,
+                          zIndex: 20
                         }}
                       >
-                        התנתקות
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              )}
+                        <button
+                          type="button"
+                          onClick={handleLogout}
+                          style={{
+                            width: "100%",
+                            border: "none",
+                            background: "transparent",
+                            textAlign: "right",
+                            padding: "10px 12px",
+                            borderRadius: 8,
+                            cursor: "pointer",
+                            color: "var(--danger)",
+                            fontWeight: 700
+                          }}
+                        >
+                          התנתקות
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -352,42 +430,57 @@ export default function HomeShell() {
           style={{
             maxWidth: 1200,
             margin: "0 auto",
-            padding: "40px 24px"
+            padding: "40px 24px 56px"
           }}
         >
+          <div style={{ marginBottom: 28 }}>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: "2.4rem",
+                color: "var(--text)"
+              }}
+            >
+              משחק שחמט אונליין
+            </h1>
+            <p
+              style={{
+                margin: "12px 0 0",
+                color: "var(--text-soft)",
+                fontSize: "1.05rem",
+                lineHeight: 1.7,
+                maxWidth: 760
+              }}
+            >
+              התחבר, הזמן חבר למשחק, או פתח חדר פרטי. בנוסף יש גם חדר הדגמה מקומי
+              שבו אפשר לשחק את שני הצדדים על אותו מסך.
+            </p>
+          </div>
+
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "360px 1fr",
-              gap: 24
+              gridTemplateColumns: "repeat(12, 1fr)",
+              gap: 20
             }}
           >
             <div
               style={{
-                background: "#ffffff",
-                border: "1px solid #ddd",
-                borderRadius: 20,
-                padding: 20
+                gridColumn: "span 4",
+                background: "var(--bg-elevated)",
+                border: "1px solid var(--border)",
+                borderRadius: 22,
+                padding: 22,
+                boxShadow: "var(--shadow)"
               }}
             >
-              <div
-                style={{
-                  fontSize: "1.2rem",
-                  fontWeight: 700,
-                  marginBottom: 14
-                }}
-              >
-                דף הבית
+              <div style={{ fontSize: "1.2rem", fontWeight: 800, marginBottom: 10 }}>
+                משחק מהיר
               </div>
 
-              <p
-                style={{
-                  color: "#666",
-                  lineHeight: 1.7,
-                  marginTop: 0
-                }}
-              >
-                מכאן אפשר להתחבר, להזמין חבר למשחק, או להיכנס לחדר ישיר.
+              <p style={{ color: "var(--text-soft)", lineHeight: 1.7, marginTop: 0 }}>
+                כניסה מיידית לחדר ההדגמה המקומי. מתאים לבדיקה, תרגול, או משחק על אותו
+                מחשב לשני הצדדים.
               </p>
 
               <Link
@@ -396,31 +489,165 @@ export default function HomeShell() {
                   display: "block",
                   textAlign: "center",
                   textDecoration: "none",
-                  background: "#8b5e3c",
+                  background: "var(--accent)",
                   color: "#fff",
                   padding: "14px 16px",
                   borderRadius: 14,
                   fontWeight: 700,
-                  marginTop: 12
+                  marginTop: 16
                 }}
               >
-                כניסה לחדר משחק לדוגמה
+                כניסה לחדר הדגמה
               </Link>
             </div>
 
             <div
               style={{
-                background: "#ffffff",
-                border: "1px solid #ddd",
-                borderRadius: 20,
-                padding: 20,
-                minHeight: 220
+                gridColumn: "span 4",
+                background: "var(--bg-elevated)",
+                border: "1px solid var(--border)",
+                borderRadius: 22,
+                padding: 22,
+                boxShadow: "var(--shadow)"
               }}
             >
-              <h2 style={{ marginTop: 0 }}>הזמן חבר למשחק</h2>
+              <div style={{ fontSize: "1.2rem", fontWeight: 800, marginBottom: 10 }}>
+                חדר פרטי מהיר
+              </div>
+
+              <p style={{ color: "var(--text-soft)", lineHeight: 1.7, marginTop: 0 }}>
+                צור קישור לחדר פרטי ושלח אותו לחבר. כל חדר פרטי מבודד ממשחקים אחרים.
+              </p>
+
+              <div
+                style={{
+                  background: "var(--bg-soft)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 14,
+                  padding: "12px 14px",
+                  wordBreak: "break-all",
+                  color: "var(--accent)",
+                  fontWeight: 700,
+                  marginTop: 8
+                }}
+              >
+                {privateRoomId
+                  ? `${typeof window !== "undefined" ? window.location.origin : ""}/game/${privateRoomId}`
+                  : ""}
+              </div>
+
+              <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+                <button
+                  type="button"
+                  onClick={handleCopyRoomLink}
+                  style={{
+                    flex: 1,
+                    height: 46,
+                    borderRadius: 12,
+                    border: "none",
+                    background: "var(--accent-strong)",
+                    color: "#fff",
+                    fontWeight: 700,
+                    cursor: "pointer"
+                  }}
+                >
+                  העתק קישור
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPrivateRoomId(createRoomLinkId())}
+                  style={{
+                    flex: 1,
+                    height: 46,
+                    borderRadius: 12,
+                    border: "1px solid var(--border)",
+                    background: "var(--bg-elevated)",
+                    color: "var(--text)",
+                    fontWeight: 700,
+                    cursor: "pointer"
+                  }}
+                >
+                  צור חדר חדש
+                </button>
+              </div>
+            </div>
+
+            <div
+              style={{
+                gridColumn: "span 4",
+                background: "var(--bg-elevated)",
+                border: "1px solid var(--border)",
+                borderRadius: 22,
+                padding: 22,
+                boxShadow: "var(--shadow)"
+              }}
+            >
+              <div style={{ fontSize: "1.2rem", fontWeight: 800, marginBottom: 10 }}>
+                מצב משתמש
+              </div>
 
               {!username ? (
-                <p style={{ color: "#666" }}>כדי להזמין חבר, יש להתחבר קודם.</p>
+                <>
+                  <p style={{ color: "var(--text-soft)", lineHeight: 1.7, marginTop: 0 }}>
+                    עדיין לא התחברת. כדי לשלוח הזמנה לחבר או להצטרף כחלק ממשחק אונליין,
+                    יש להתחבר קודם.
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={() => openAuth("login")}
+                    style={{
+                      width: "100%",
+                      height: 46,
+                      borderRadius: 12,
+                      border: "none",
+                      background: "var(--accent)",
+                      color: "#fff",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      marginTop: 16
+                    }}
+                  >
+                    התחברות
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div
+                    style={{
+                      background: "var(--bg-soft)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 14,
+                      padding: "14px 16px",
+                      fontWeight: 700,
+                      color: "var(--text)"
+                    }}
+                  >
+                    מחובר כ־{username}
+                  </div>
+
+                  <p style={{ color: "var(--text-soft)", lineHeight: 1.7, marginTop: 14 }}>
+                    כעת אפשר להזמין חבר למשחק או להצטרף לחדר פרטי.
+                  </p>
+                </>
+              )}
+            </div>
+
+            <div
+              style={{
+                gridColumn: "span 7",
+                background: "var(--bg-elevated)",
+                border: "1px solid var(--border)",
+                borderRadius: 22,
+                padding: 22,
+                boxShadow: "var(--shadow)"
+              }}
+            >
+              <h2 style={{ marginTop: 0, marginBottom: 16 }}>הזמן חבר למשחק</h2>
+
+              {!username ? (
+                <p style={{ color: "var(--text-soft)" }}>כדי להזמין חבר, יש להתחבר קודם.</p>
               ) : (
                 <>
                   <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
@@ -429,13 +656,16 @@ export default function HomeShell() {
                       onChange={(e) => {
                         setFriendName(e.target.value);
                         setFriendStatus(null);
+                        setInviteStatusText("");
                       }}
                       placeholder="שם החבר"
                       style={{
                         flex: 1,
-                        height: 48,
+                        height: 50,
                         borderRadius: 12,
-                        border: "1px solid #ccc",
+                        border: "1px solid var(--border)",
+                        background: "var(--bg-elevated)",
+                        color: "var(--text)",
                         padding: "0 14px",
                         fontSize: 16
                       }}
@@ -448,7 +678,7 @@ export default function HomeShell() {
                         width: 120,
                         borderRadius: 12,
                         border: "none",
-                        background: "#1f6f43",
+                        background: "var(--accent-strong)",
                         color: "#fff",
                         fontWeight: 700,
                         cursor: "pointer"
@@ -461,10 +691,10 @@ export default function HomeShell() {
                   {friendStatus ? (
                     <div
                       style={{
-                        border: "1px solid #e2ddd5",
+                        border: "1px solid var(--border)",
                         borderRadius: 14,
                         padding: 14,
-                        background: "#faf8f5"
+                        background: "var(--bg-soft)"
                       }}
                     >
                       {friendStatus.online ? (
@@ -472,36 +702,55 @@ export default function HomeShell() {
                           <div
                             style={{
                               fontWeight: 700,
-                              color: "#1f6f43",
+                              color: "var(--accent-strong)",
                               marginBottom: 10
                             }}
                           >
                             {friendStatus.friendName} מחובר
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={handleSendInvite}
-                            style={{
-                              height: 44,
-                              borderRadius: 12,
-                              border: "none",
-                              background: "#8b5e3c",
-                              color: "#fff",
-                              fontWeight: 700,
-                              cursor: "pointer",
-                              padding: "0 18px"
-                            }}
-                          >
-                            הזמנה
-                          </button>
+                          {!outgoingInvite ? (
+                            <button
+                              type="button"
+                              onClick={handleSendInvite}
+                              style={{
+                                height: 44,
+                                borderRadius: 12,
+                                border: "none",
+                                background: "var(--accent)",
+                                color: "#fff",
+                                fontWeight: 700,
+                                cursor: "pointer",
+                                padding: "0 18px"
+                              }}
+                            >
+                              הזמנה
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={handleCancelInvite}
+                              style={{
+                                height: 44,
+                                borderRadius: 12,
+                                border: "1px solid var(--border)",
+                                background: "var(--bg-elevated)",
+                                color: "var(--danger)",
+                                fontWeight: 700,
+                                cursor: "pointer",
+                                padding: "0 18px"
+                              }}
+                            >
+                              בטל הזמנה
+                            </button>
+                          )}
                         </>
                       ) : (
                         <>
                           <div
                             style={{
                               fontWeight: 700,
-                              color: "#b42318",
+                              color: "var(--danger)",
                               marginBottom: 10
                             }}
                           >
@@ -510,7 +759,7 @@ export default function HomeShell() {
 
                           <div style={{ display: "flex", gap: 10 }}>
                             <Link
-                              href="/game/demo-room"
+                              href={`/game/${privateRoomId || "demo-room"}`}
                               style={{
                                 textDecoration: "none",
                                 height: 44,
@@ -519,7 +768,7 @@ export default function HomeShell() {
                                 justifyContent: "center",
                                 padding: "0 16px",
                                 borderRadius: 12,
-                                background: "#8b5e3c",
+                                background: "var(--accent)",
                                 color: "#fff",
                                 fontWeight: 700
                               }}
@@ -532,13 +781,14 @@ export default function HomeShell() {
                               onClick={() => {
                                 setFriendName("");
                                 setFriendStatus(null);
+                                setInviteStatusText("");
                               }}
                               style={{
                                 height: 44,
                                 borderRadius: 12,
-                                border: "1px solid #ddd",
-                                background: "#fff",
-                                color: "#222",
+                                border: "1px solid var(--border)",
+                                background: "var(--bg-elevated)",
+                                color: "var(--text)",
                                 fontWeight: 700,
                                 cursor: "pointer",
                                 padding: "0 16px"
@@ -549,35 +799,56 @@ export default function HomeShell() {
                           </div>
                         </>
                       )}
+
+                      {inviteStatusText ? (
+                        <div
+                          style={{
+                            marginTop: 12,
+                            fontWeight: 700,
+                            color: "var(--text-soft)"
+                          }}
+                        >
+                          {inviteStatusText}
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
-
-                  <div style={{ marginTop: 24 }}>
-                    <div style={{ fontWeight: 700, marginBottom: 10 }}>מחוברים כרגע</div>
-
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                      {connectedUsers.length === 0 ? (
-                        <div style={{ color: "#777" }}>אין משתמשים מחוברים כרגע</div>
-                      ) : (
-                        connectedUsers.map((user) => (
-                          <div
-                            key={user.username}
-                            style={{
-                              padding: "8px 12px",
-                              background: "#f3f1eb",
-                              border: "1px solid #ddd7ca",
-                              borderRadius: 999,
-                              fontWeight: 700
-                            }}
-                          >
-                            {user.username}
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
                 </>
               )}
+            </div>
+
+            <div
+              style={{
+                gridColumn: "span 5",
+                background: "var(--bg-elevated)",
+                border: "1px solid var(--border)",
+                borderRadius: 22,
+                padding: 22,
+                boxShadow: "var(--shadow)"
+              }}
+            >
+              <h2 style={{ marginTop: 0, marginBottom: 16 }}>מחוברים כרגע</h2>
+
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {connectedUsers.length === 0 ? (
+                  <div style={{ color: "var(--text-soft)" }}>אין משתמשים מחוברים כרגע</div>
+                ) : (
+                  connectedUsers.map((user) => (
+                    <div
+                      key={user.username}
+                      style={{
+                        padding: "8px 12px",
+                        background: "var(--bg-soft)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 999,
+                        fontWeight: 700
+                      }}
+                    >
+                      {user.username}
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </div>
