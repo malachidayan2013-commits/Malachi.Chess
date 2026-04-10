@@ -7,20 +7,26 @@ export default function GameSidebar({
   playerColor,
   resultText = "",
   drawOfferBy = null,
+  rematchOfferedBy = null,
   onResign,
   onOfferDraw,
   onAcceptDraw,
   onDeclineDraw,
+  onOfferRematch,
+  onDeclineRematch,
   isDemoRoom
 }: {
   moves?: MoveEntry[];
   playerColor: PlayerColor;
   resultText?: string;
   drawOfferBy?: PlayerColor | null;
+  rematchOfferedBy?: PlayerColor | null;
   onResign: () => void;
   onOfferDraw: () => void;
   onAcceptDraw: () => void;
   onDeclineDraw: () => void;
+  onOfferRematch: () => void;
+  onDeclineRematch: () => void;
   isDemoRoom: boolean;
 }) {
   const safeMoves = Array.isArray(moves) ? moves : [];
@@ -35,6 +41,8 @@ export default function GameSidebar({
   }
 
   const hasIncomingDrawOffer = !!drawOfferBy && drawOfferBy !== playerColor;
+  const hasIncomingRematchOffer = !!rematchOfferedBy && rematchOfferedBy !== playerColor;
+  const hasOutgoingRematchOffer = !!rematchOfferedBy && rematchOfferedBy === playerColor;
 
   return (
     <div
@@ -157,6 +165,74 @@ export default function GameSidebar({
         </div>
       ) : null}
 
+      {hasIncomingRematchOffer ? (
+        <div
+          style={{
+            marginBottom: 14,
+            padding: "12px 14px",
+            borderRadius: 12,
+            background: "var(--bg-soft)",
+            border: "1px solid var(--border)"
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 10 }}>התקבלה בקשת משחק חוזר</div>
+
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              type="button"
+              onClick={onOfferRematch}
+              style={{
+                flex: 1,
+                height: 40,
+                borderRadius: 10,
+                border: "none",
+                background: "var(--accent-strong)",
+                color: "#fff",
+                fontWeight: 700,
+                cursor: "pointer",
+                pointerEvents: "auto"
+              }}
+            >
+              אישור
+            </button>
+
+            <button
+              type="button"
+              onClick={onDeclineRematch}
+              style={{
+                flex: 1,
+                height: 40,
+                borderRadius: 10,
+                border: "1px solid var(--border)",
+                background: "var(--bg-elevated)",
+                color: "var(--text)",
+                fontWeight: 700,
+                cursor: "pointer",
+                pointerEvents: "auto"
+              }}
+            >
+              דחייה
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {hasOutgoingRematchOffer ? (
+        <div
+          style={{
+            marginBottom: 14,
+            padding: "12px 14px",
+            borderRadius: 12,
+            background: "var(--bg-soft)",
+            border: "1px solid var(--border)",
+            fontWeight: 700,
+            color: "var(--text-soft)"
+          }}
+        >
+          בקשת משחק חוזר נשלחה. ממתין לאישור היריב.
+        </div>
+      ) : null}
+
       {!resultText ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <button
@@ -193,7 +269,26 @@ export default function GameSidebar({
             כניעה
           </button>
         </div>
-      ) : null}
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <button
+            type="button"
+            onClick={onOfferRematch}
+            style={{
+              height: 44,
+              borderRadius: 12,
+              border: "none",
+              background: "var(--accent)",
+              color: "#fff",
+              fontWeight: 700,
+              cursor: "pointer",
+              pointerEvents: "auto"
+            }}
+          >
+            משחק חוזר
+          </button>
+        </div>
+      )}
 
       {isDemoRoom ? (
         <div
