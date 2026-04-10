@@ -36,8 +36,7 @@ export type MoveEntry = {
   from: string;
   to: string;
   san: string;
-  piece: string;
-  color: "w" | "b";
+  color: "white" | "black";
 };
 
 export type RoomSnapshot = {
