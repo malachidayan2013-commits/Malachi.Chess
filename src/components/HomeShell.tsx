@@ -343,7 +343,7 @@ export default function HomeShell() {
             <div
               style={{
                 fontSize: "2rem",
-                fontWeight: 800,
+                fontWeight: 900,
                 color: "var(--accent)"
               }}
             >
@@ -386,7 +386,7 @@ export default function HomeShell() {
                         border: "none",
                         background: "transparent",
                         color: "var(--text)",
-                        fontWeight: 700,
+                        fontWeight: 800,
                         fontSize: "1rem",
                         cursor: "pointer",
                         padding: 0
@@ -441,32 +441,97 @@ export default function HomeShell() {
           style={{
             maxWidth: 1200,
             margin: "0 auto",
-            padding: "40px 24px 56px"
+            padding: "34px 24px 56px"
           }}
         >
-          <div style={{ marginBottom: 28 }}>
-            <h1
-              className="hero-title"
+          <div
+            className="app-shell-card hero-wrap"
+            style={{
+              position: "relative",
+              overflow: "hidden",
+              padding: "30px 28px",
+              marginBottom: 24
+            }}
+          >
+            <div
+              className="hero-glow"
               style={{
-                margin: 0,
-                fontSize: "2.4rem",
-                color: "var(--text)"
+                top: "-80px",
+                left: "-40px",
+                background: "rgba(31, 122, 73, 0.22)"
+              }}
+            />
+
+            <div
+              className="hero-glow"
+              style={{
+                bottom: "-120px",
+                right: "-60px",
+                background: "rgba(149, 99, 60, 0.22)"
+              }}
+            />
+
+            <div
+              style={{
+                position: "relative",
+                zIndex: 1,
+                display: "flex",
+                alignItems: "flex-start",
+                justifyContent: "space-between",
+                gap: 20,
+                flexWrap: "wrap"
               }}
             >
-              משחק שחמט אונליין
-            </h1>
-            <p
-              style={{
-                margin: "12px 0 0",
-                color: "var(--text-soft)",
-                fontSize: "1.05rem",
-                lineHeight: 1.7,
-                maxWidth: 760
-              }}
-            >
-              התחבר, הזמן חבר למשחק, או פתח חדר פרטי. בנוסף יש גם חדר הדגמה מקומי
-              שבו אפשר לשחק את שני הצדדים על אותו מסך.
-            </p>
+              <div style={{ maxWidth: 760 }}>
+                <div
+                  className="soft-badge"
+                  style={{
+                    marginBottom: 14
+                  }}
+                >
+                  ♟️ שחמט אונליין
+                </div>
+
+                <h1
+                  className="hero-title"
+                  style={{
+                    margin: 0,
+                    fontSize: "2.7rem",
+                    lineHeight: 1.15,
+                    fontWeight: 900
+                  }}
+                >
+                  שחק מול חברים, פתח חדר פרטי, או תרגל בחדר הדגמה
+                </h1>
+
+                <p
+                  style={{
+                    margin: "14px 0 0",
+                    color: "var(--text-soft)",
+                    fontSize: "1.05rem",
+                    lineHeight: 1.85,
+                    maxWidth: 760
+                  }}
+                >
+                  התחבר, הזמן חבר למשחק, או פתח חדר פרטי. בנוסף יש גם חדר הדגמה מקומי
+                  שבו אפשר לשחק את שני הצדדים על אותו מסך.
+                </p>
+              </div>
+
+              <div
+                className="app-shell-card"
+                style={{
+                  minWidth: 220,
+                  padding: "16px 18px",
+                  background: "var(--bg-elevated)"
+                }}
+              >
+                <div style={{ fontWeight: 900, marginBottom: 10 }}>מצב נוכחי</div>
+                <div style={{ color: "var(--text-soft)", lineHeight: 1.7 }}>
+                  {username ? `מחובר כ־${username}` : "לא מחובר כרגע"}
+                </div>
+              </div>
+            </div>
           </div>
 
           <div
@@ -493,15 +558,12 @@ export default function HomeShell() {
 
               <Link
                 href="/game/demo-room"
+                className="app-button-primary"
                 style={{
                   display: "block",
                   textAlign: "center",
-                  background: "var(--accent)",
-                  color: "#fff",
                   padding: "14px 16px",
-                  borderRadius: 14,
-                  fontWeight: 700,
-                  marginTop: 16
+                  marginTop: 18
                 }}
               >
                 כניסה לחדר הדגמה
@@ -525,12 +587,13 @@ export default function HomeShell() {
                 style={{
                   background: "var(--bg-soft)",
                   border: "1px solid var(--border)",
-                  borderRadius: 14,
-                  padding: "12px 14px",
+                  borderRadius: 16,
+                  padding: "14px 14px",
                   wordBreak: "break-all",
                   color: "var(--accent)",
-                  fontWeight: 700,
-                  marginTop: 8
+                  fontWeight: 800,
+                  marginTop: 12,
+                  textAlign: "center"
                 }}
               >
                 {privateRoomId
@@ -538,56 +601,44 @@ export default function HomeShell() {
                   : ""}
               </div>
 
-              <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 10,
+                  marginTop: 12
+                }}
+              >
                 <button
                   type="button"
-                  onClick={handleCopyRoomLink}
+                  onClick={handleCreateNewPrivateRoom}
+                  className="app-button-secondary"
                   style={{
-                    flex: 1,
-                    minWidth: 120,
-                    height: 46,
-                    borderRadius: 12,
-                    border: "none",
-                    background: "var(--accent-strong)",
-                    color: "#fff",
-                    fontWeight: 700,
-                    cursor: "pointer"
+                    height: 46
                   }}
                 >
-                  העתק קישור
+                  צור חדר חדש
                 </button>
 
                 <button
                   type="button"
-                  onClick={handleCreateNewPrivateRoom}
+                  onClick={handleCopyRoomLink}
+                  className="app-button-success"
                   style={{
-                    flex: 1,
-                    minWidth: 120,
-                    height: 46,
-                    borderRadius: 12,
-                    border: "1px solid var(--border)",
-                    background: "var(--bg-elevated)",
-                    color: "var(--text)",
-                    fontWeight: 700,
-                    cursor: "pointer"
+                    height: 46
                   }}
                 >
-                  צור חדר חדש
+                  העתק קישור
                 </button>
               </div>
 
               <button
                 type="button"
                 onClick={handleEnterPrivateRoom}
+                className="app-button-primary"
                 style={{
                   width: "100%",
                   height: 46,
-                  borderRadius: 12,
-                  border: "none",
-                  background: "var(--accent)",
-                  color: "#fff",
-                  fontWeight: 700,
-                  cursor: "pointer",
                   marginTop: 12
                 }}
               >
@@ -602,23 +653,14 @@ export default function HomeShell() {
                 padding: 22
               }}
             >
-              <h2 style={{ marginTop: 0, marginBottom: 16 }}>מחוברים כרגע</h2>
+              <div className="section-title">מחוברים כרגע</div>
 
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                 {connectedUsers.length === 0 ? (
                   <div style={{ color: "var(--text-soft)" }}>אין משתמשים מחוברים כרגע</div>
                 ) : (
                   connectedUsers.map((user) => (
-                    <div
-                      key={user.username}
-                      style={{
-                        padding: "8px 12px",
-                        background: "var(--bg-soft)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 999,
-                        fontWeight: 700
-                      }}
-                    >
+                    <div key={user.username} className="connected-pill">
                       {user.username}
                     </div>
                   ))
@@ -633,13 +675,20 @@ export default function HomeShell() {
                 padding: 22
               }}
             >
-              <h2 style={{ marginTop: 0, marginBottom: 16 }}>הזמן חבר למשחק</h2>
+              <div className="section-title">הזמן חבר למשחק</div>
 
               {!username ? (
-                <p style={{ color: "var(--text-soft)" }}>כדי להזמין חבר, יש להתחבר קודם.</p>
+                <p className="section-text">כדי להזמין חבר, יש להתחבר קודם.</p>
               ) : (
                 <>
-                  <div style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 12,
+                      marginBottom: 12,
+                      flexWrap: "wrap"
+                    }}
+                  >
                     <input
                       value={friendName}
                       onChange={(e) => {
@@ -652,7 +701,7 @@ export default function HomeShell() {
                         flex: 1,
                         minWidth: 220,
                         height: 50,
-                        borderRadius: 12,
+                        borderRadius: 14,
                         border: "1px solid var(--border)",
                         background: "var(--bg-elevated)",
                         color: "var(--text)",
@@ -664,15 +713,10 @@ export default function HomeShell() {
                     <button
                       type="button"
                       onClick={handleCheckFriend}
+                      className="app-button-success"
                       style={{
                         width: 120,
-                        height: 50,
-                        borderRadius: 12,
-                        border: "none",
-                        background: "var(--accent-strong)",
-                        color: "#fff",
-                        fontWeight: 700,
-                        cursor: "pointer"
+                        height: 50
                       }}
                     >
                       אישור
@@ -683,8 +727,8 @@ export default function HomeShell() {
                     <div
                       style={{
                         border: "1px solid var(--border)",
-                        borderRadius: 14,
-                        padding: 14,
+                        borderRadius: 16,
+                        padding: 16,
                         background: "var(--bg-soft)"
                       }}
                     >
@@ -692,7 +736,7 @@ export default function HomeShell() {
                         <>
                           <div
                             style={{
-                              fontWeight: 700,
+                              fontWeight: 800,
                               color: "var(--accent-strong)",
                               marginBottom: 10
                             }}
@@ -704,14 +748,9 @@ export default function HomeShell() {
                             <button
                               type="button"
                               onClick={handleSendInvite}
+                              className="app-button-primary"
                               style={{
                                 height: 44,
-                                borderRadius: 12,
-                                border: "none",
-                                background: "var(--accent)",
-                                color: "#fff",
-                                fontWeight: 700,
-                                cursor: "pointer",
                                 padding: "0 18px"
                               }}
                             >
@@ -721,14 +760,9 @@ export default function HomeShell() {
                             <button
                               type="button"
                               onClick={handleCancelInvite}
+                              className="app-button-danger"
                               style={{
                                 height: 44,
-                                borderRadius: 12,
-                                border: "1px solid var(--border)",
-                                background: "var(--bg-elevated)",
-                                color: "var(--danger)",
-                                fontWeight: 700,
-                                cursor: "pointer",
                                 padding: "0 18px"
                               }}
                             >
@@ -740,7 +774,7 @@ export default function HomeShell() {
                         <>
                           <div
                             style={{
-                              fontWeight: 700,
+                              fontWeight: 800,
                               color: "var(--danger)",
                               marginBottom: 10
                             }}
@@ -751,16 +785,13 @@ export default function HomeShell() {
                           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                             <Link
                               href={`/game/${privateRoomId || "demo-room"}`}
+                              className="app-button-primary"
                               style={{
                                 height: 44,
                                 display: "inline-flex",
                                 alignItems: "center",
                                 justifyContent: "center",
-                                padding: "0 16px",
-                                borderRadius: 12,
-                                background: "var(--accent)",
-                                color: "#fff",
-                                fontWeight: 700
+                                padding: "0 16px"
                               }}
                             >
                               קישור לחדר
@@ -773,14 +804,9 @@ export default function HomeShell() {
                                 setFriendStatus(null);
                                 setInviteStatusText("");
                               }}
+                              className="app-button-secondary"
                               style={{
                                 height: 44,
-                                borderRadius: 12,
-                                border: "1px solid var(--border)",
-                                background: "var(--bg-elevated)",
-                                color: "var(--text)",
-                                fontWeight: 700,
-                                cursor: "pointer",
                                 padding: "0 16px"
                               }}
                             >
