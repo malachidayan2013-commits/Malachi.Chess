@@ -65,69 +65,125 @@ export default function HomeShell() {
       });
     }
 
-    socket.on("users:update", setConnectedUsers);
-    socket.on("invite:incoming", setIncomingInvite);
-    socket.on("invite:accepted", (payload: InviteAcceptedPayload) => {
+    const handleUsersUpdate = (users: UsersUpdatePayload) => {
+      setConnectedUsers(users);
+    };
+
+    const handleIncomingInvite = (payload: IncomingInvite) => {
+      setIncomingInvite(payload);
+    };
+
+    const handleInviteAccepted = (payload: InviteAcceptedPayload) => {
       setOutgoingInvite(null);
       setInviteStatusText("");
       router.push(`/game/${payload.roomId}`);
-    });
+    };
 
-    socket.on("invite:rejected", () => {
+    const handleInviteRejected = () => {
       setOutgoingInvite(null);
       setInviteStatusText("ההזמנה נדחתה.");
-    });
+    };
 
-    socket.on("invite:cancelled", () => {
+    const handleInviteCancelled = () => {
       setIncomingInvite(null);
-    });
+    };
+
+    socket.on("users:update", handleUsersUpdate);
+    socket.on("invite:incoming", handleIncomingInvite);
+    socket.on("invite:accepted", handleInviteAccepted);
+    socket.on("invite:rejected", handleInviteRejected);
+    socket.on("invite:cancelled", handleInviteCancelled);
 
     return () => {
-      socket.off("users:update");
-      socket.off("invite:incoming");
-      socket.off("invite:accepted");
-      socket.off("invite:rejected");
-      socket.off("invite:cancelled");
+      socket.off("users:update", handleUsersUpdate);
+      socket.off("invite:incoming", handleIncomingInvite);
+      socket.off("invite:accepted", handleInviteAccepted);
+      socket.off("invite:rejected", handleInviteRejected);
+      socket.off("invite:cancelled", handleInviteCancelled);
     };
   }, [router]);
 
+  const authTitle = useMemo(() => {
+    return authMode === "login" ? "התחברות" : "הרשמה";
+  }, [authMode]);
+
   function handleToggleTheme() {
-    const next = theme === "light" ? "dark" : "light";
-    setTheme(next);
-    setStoredTheme(next);
-    applyTheme(next);
+    const nextTheme = theme === "light" ? "dark" : "light";
+    setTheme(nextTheme);
+    setStoredTheme(nextTheme);
+    applyTheme(nextTheme);
   }
 
   function openAuth(mode: AuthMode) {
     setAuthMode(mode);
     setInput("");
     setError("");
+    setLoadingAuth(false);
     setAuthOpen(true);
   }
 
   function closeAuth() {
+    if (loadingAuth) return;
     setAuthOpen(false);
+    setInput("");
+    setError("");
+    setLoadingAuth(false);
+  }
+
+  function finishAuthSuccess(normalized: string) {
+    setStoredUsername(normalized);
+    setUsername(normalized);
+    setHoverOpen(false);
+    setLoadingAuth(false);
+    setAuthOpen(false);
+    setInput("");
+    setError("");
   }
 
   function handlePrimaryAction() {
     const normalized = input.trim();
+
     if (!normalized) {
       setError("יש להזין שם משתמש");
       return;
     }
 
+    if (!socket.connected) {
+      setError("אין חיבור לשרת כרגע. רענן את הדף ונסה שוב.");
+      return;
+    }
+
+    setLoadingAuth(true);
+    setError("");
+
+    let handled = false;
+
+    const timeoutId = window.setTimeout(() => {
+      if (!handled) {
+        handled = true;
+        setLoadingAuth(false);
+        setError("השרת לא הגיב בזמן. נסה שוב.");
+      }
+    }, 5000);
+
     socket.emit(
       "user:register",
       { username: normalized },
-      (res: { ok: boolean; message?: string }) => {
-        if (!res.ok) {
-          setError(res.message || "שגיאה");
+      (response: { ok: boolean; message?: string }) => {
+        if (handled) return;
+        handled = true;
+        clearTimeout(timeoutId);
+
+        if (!response?.ok) {
+          setLoadingAuth(false);
+          setError(
+            response?.message ||
+              (authMode === "login" ? "לא ניתן להתחבר" : "לא ניתן להירשם")
+          );
           return;
         }
 
-        setStoredUsername(normalized);
-        setUsername(normalized);
-        setAuthOpen(false);
+        finishAuthSuccess(normalized);
       }
     );
   }
@@ -137,79 +193,804 @@ export default function HomeShell() {
       clearStoredUsername();
       setUsername("");
       setHoverOpen(false);
+      setFriendName("");
+      setFriendStatus(null);
+      setPrivateRoomId(generateRoomId(6));
+      setOutgoingInvite(null);
+      setInviteStatusText("");
     });
   }
 
   function handleCheckFriend() {
-    socket.emit("friend:status", { friendName }, setFriendStatus);
+    const normalized = friendName.trim();
+
+    if (!normalized) {
+      setFriendStatus({
+        ok: false,
+        online: false,
+        friendName: "",
+        message: "יש להזין שם חבר"
+      });
+      return;
+    }
+
+    socket.emit(
+      "friend:status",
+      { friendName: normalized },
+      (response: FriendStatusResponse) => {
+        setFriendStatus(response);
+        setInviteStatusText("");
+      }
+    );
   }
 
   function handleSendInvite() {
-    socket.emit("invite:create", { fromUsername: username, toUsername: friendName }, (res: any) => {
-      if (!res.ok) return;
-      setOutgoingInvite(res);
-      setInviteStatusText("הזמנה נשלחה");
-    });
+    const normalized = friendName.trim();
+    if (!username || !normalized || outgoingInvite) return;
+
+    socket.emit(
+      "invite:create",
+      {
+        fromUsername: username,
+        toUsername: normalized
+      },
+      (response: { ok: boolean; message?: string; inviteId?: string }) => {
+        if (!response.ok || !response.inviteId) {
+          setInviteStatusText(response.message || "לא ניתן היה לשלוח הזמנה");
+          return;
+        }
+
+        setOutgoingInvite({
+          inviteId: response.inviteId,
+          toUsername: normalized
+        });
+        setInviteStatusText(`ההזמנה נשלחה ל־${normalized}`);
+      }
+    );
   }
 
   function handleCancelInvite() {
     if (!outgoingInvite) return;
-    socket.emit("invite:cancel", { inviteId: outgoingInvite.inviteId }, () => {
-      setOutgoingInvite(null);
-    });
+
+    socket.emit(
+      "invite:cancel",
+      { inviteId: outgoingInvite.inviteId },
+      (response: { ok: boolean; message?: string }) => {
+        if (!response.ok) {
+          setInviteStatusText(response.message || "לא ניתן לבטל את ההזמנה");
+          return;
+        }
+
+        setOutgoingInvite(null);
+        setInviteStatusText("ההזמנה בוטלה");
+      }
+    );
   }
 
   function handleAcceptInvite() {
     if (!incomingInvite) return;
-    socket.emit("invite:accept", { inviteId: incomingInvite.inviteId }, (res: any) => {
-      if (res.roomId) router.push(`/game/${res.roomId}`);
-    });
+
+    socket.emit(
+      "invite:accept",
+      { inviteId: incomingInvite.inviteId },
+      (response: { ok: boolean; roomId?: string }) => {
+        if (!response.ok || !response.roomId) return;
+        setIncomingInvite(null);
+        router.push(`/game/${response.roomId}`);
+      }
+    );
   }
 
   function handleRejectInvite() {
     if (!incomingInvite) return;
-    socket.emit("invite:reject", { inviteId: incomingInvite.inviteId });
-    setIncomingInvite(null);
+
+    socket.emit("invite:reject", { inviteId: incomingInvite.inviteId }, () => {
+      setIncomingInvite(null);
+    });
   }
 
-  function handleCreateRoom() {
+  async function handleCopyRoomLink() {
+    try {
+      const url = `${window.location.origin}/game/${privateRoomId}`;
+      await navigator.clipboard.writeText(url);
+      setInviteStatusText("הקישור הועתק");
+    } catch {
+      setInviteStatusText("לא ניתן היה להעתיק את הקישור");
+    }
+  }
+
+  function handleCreateNewPrivateRoom() {
     setPrivateRoomId(generateRoomId(6));
   }
 
-  function handleEnterRoom() {
+  function handleEnterPrivateRoom() {
     router.push(`/game/${privateRoomId}`);
   }
 
   return (
     <>
-      <div style={{ padding: 24 }}>
-        <h1>אתר שחמט</h1>
+      <div
+        style={{
+          minHeight: "100vh",
+          background: "var(--bg)",
+          direction: "rtl",
+          fontFamily: "Arial, sans-serif",
+          color: "var(--text)"
+        }}
+      >
+        <div
+          style={{
+            borderBottom: "1px solid var(--border)",
+            background: "var(--bg)",
+            position: "sticky",
+            top: 0,
+            zIndex: 10,
+            backdropFilter: "blur(8px)"
+          }}
+        >
+          <div
+            className="top-nav"
+            style={{
+              maxWidth: 1200,
+              margin: "0 auto",
+              padding: "16px 24px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12
+            }}
+          >
+            <div
+              style={{
+                fontSize: "2rem",
+                fontWeight: 800,
+                color: "var(--accent)"
+              }}
+            >
+              אתר שחמט
+            </div>
 
-        <ThemeToggle theme={theme} onToggle={handleToggleTheme} />
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <ThemeToggle theme={theme} onToggle={handleToggleTheme} />
 
-        {!username ? (
-          <button onClick={() => openAuth("login")}>התחברות</button>
-        ) : (
-          <div>
-            {username}
-            <button onClick={handleLogout}>התנתקות</button>
+              <div style={{ position: "relative" }}>
+                {!username ? (
+                  <button
+                    type="button"
+                    onClick={() => openAuth("login")}
+                    style={{
+                      border: "none",
+                      background: "transparent",
+                      color: "var(--accent)",
+                      fontWeight: 700,
+                      fontSize: "1rem",
+                      cursor: "pointer",
+                      padding: 0
+                    }}
+                  >
+                    התחברות
+                  </button>
+                ) : (
+                  <div
+                    onMouseEnter={() => setHoverOpen(true)}
+                    onMouseLeave={() => setHoverOpen(false)}
+                    style={{
+                      position: "relative",
+                      display: "inline-block",
+                      paddingBottom: 48
+                    }}
+                  >
+                    <button
+                      type="button"
+                      style={{
+                        border: "none",
+                        background: "transparent",
+                        color: "var(--text)",
+                        fontWeight: 700,
+                        fontSize: "1rem",
+                        cursor: "pointer",
+                        padding: 0
+                      }}
+                    >
+                      {username}
+                    </button>
+
+                    {hoverOpen ? (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: 28,
+                          left: 0,
+                          minWidth: 140,
+                          background: "var(--bg-elevated)",
+                          border: "1px solid var(--border)",
+                          borderRadius: 12,
+                          boxShadow: "var(--shadow)",
+                          padding: 8,
+                          zIndex: 20
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={handleLogout}
+                          style={{
+                            width: "100%",
+                            border: "none",
+                            background: "transparent",
+                            textAlign: "right",
+                            padding: "10px 12px",
+                            borderRadius: 8,
+                            cursor: "pointer",
+                            color: "var(--danger)",
+                            fontWeight: 700
+                          }}
+                        >
+                          התנתקות
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
-        )}
-
-        <div>
-          <h2>חדר פרטי</h2>
-          <div>{privateRoomId}</div>
-          <button onClick={handleCreateRoom}>חדש</button>
-          <button onClick={handleEnterRoom}>כניסה</button>
         </div>
 
-        <div>
-          <h2>מחוברים</h2>
-          {connectedUsers.map((u) => (
-            <div key={u.username}>{u.username}</div>
-          ))}
+        <div
+          className="page-wrap"
+          style={{
+            maxWidth: 1200,
+            margin: "0 auto",
+            padding: "40px 24px 56px"
+          }}
+        >
+          <div style={{ marginBottom: 28 }}>
+            <h1
+              className="hero-title"
+              style={{
+                margin: 0,
+                fontSize: "2.4rem",
+                color: "var(--text)"
+              }}
+            >
+              משחק שחמט אונליין
+            </h1>
+            <p
+              style={{
+                margin: "12px 0 0",
+                color: "var(--text-soft)",
+                fontSize: "1.05rem",
+                lineHeight: 1.7,
+                maxWidth: 760
+              }}
+            >
+              התחבר, הזמן חבר למשחק, או פתח חדר פרטי. בנוסף יש גם חדר הדגמה מקומי
+              שבו אפשר לשחק את שני הצדדים על אותו מסך.
+            </p>
+          </div>
+
+          <div
+            className="home-grid"
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(12, 1fr)",
+              gap: 20
+            }}
+          >
+            <div
+              className="app-shell-card"
+              style={{
+                gridColumn: "span 4",
+                padding: 22
+              }}
+            >
+              <div className="section-title">משחק מהיר</div>
+
+              <p className="section-text">
+                כניסה מיידית לחדר ההדגמה המקומי. מתאים לבדיקה, תרגול, או משחק על אותו
+                מחשב לשני הצדדים.
+              </p>
+
+              <Link
+                href="/game/demo-room"
+                style={{
+                  display: "block",
+                  textAlign: "center",
+                  background: "var(--accent)",
+                  color: "#fff",
+                  padding: "14px 16px",
+                  borderRadius: 14,
+                  fontWeight: 700,
+                  marginTop: 16
+                }}
+              >
+                כניסה לחדר הדגמה
+              </Link>
+            </div>
+
+            <div
+              className="app-shell-card"
+              style={{
+                gridColumn: "span 4",
+                padding: 22
+              }}
+            >
+              <div className="section-title">חדר פרטי מהיר</div>
+
+              <p className="section-text">
+                צור קישור לחדר פרטי ושלח אותו לחבר. כל חדר פרטי מבודד ממשחקים אחרים.
+              </p>
+
+              <div
+                style={{
+                  background: "var(--bg-soft)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 14,
+                  padding: "12px 14px",
+                  wordBreak: "break-all",
+                  color: "var(--accent)",
+                  fontWeight: 700,
+                  marginTop: 8
+                }}
+              >
+                {privateRoomId
+                  ? `${typeof window !== "undefined" ? window.location.origin : ""}/game/${privateRoomId}`
+                  : ""}
+              </div>
+
+              <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  onClick={handleCopyRoomLink}
+                  style={{
+                    flex: 1,
+                    minWidth: 120,
+                    height: 46,
+                    borderRadius: 12,
+                    border: "none",
+                    background: "var(--accent-strong)",
+                    color: "#fff",
+                    fontWeight: 700,
+                    cursor: "pointer"
+                  }}
+                >
+                  העתק קישור
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCreateNewPrivateRoom}
+                  style={{
+                    flex: 1,
+                    minWidth: 120,
+                    height: 46,
+                    borderRadius: 12,
+                    border: "1px solid var(--border)",
+                    background: "var(--bg-elevated)",
+                    color: "var(--text)",
+                    fontWeight: 700,
+                    cursor: "pointer"
+                  }}
+                >
+                  צור חדר חדש
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleEnterPrivateRoom}
+                style={{
+                  width: "100%",
+                  height: 46,
+                  borderRadius: 12,
+                  border: "none",
+                  background: "var(--accent)",
+                  color: "#fff",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  marginTop: 12
+                }}
+              >
+                כניסה לחדר הפרטי
+              </button>
+            </div>
+
+            <div
+              className="app-shell-card"
+              style={{
+                gridColumn: "span 4",
+                padding: 22
+              }}
+            >
+              <h2 style={{ marginTop: 0, marginBottom: 16 }}>מחוברים כרגע</h2>
+
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {connectedUsers.length === 0 ? (
+                  <div style={{ color: "var(--text-soft)" }}>אין משתמשים מחוברים כרגע</div>
+                ) : (
+                  connectedUsers.map((user) => (
+                    <div
+                      key={user.username}
+                      style={{
+                        padding: "8px 12px",
+                        background: "var(--bg-soft)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 999,
+                        fontWeight: 700
+                      }}
+                    >
+                      {user.username}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div
+              className="app-shell-card"
+              style={{
+                gridColumn: "span 12",
+                padding: 22
+              }}
+            >
+              <h2 style={{ marginTop: 0, marginBottom: 16 }}>הזמן חבר למשחק</h2>
+
+              {!username ? (
+                <p style={{ color: "var(--text-soft)" }}>כדי להזמין חבר, יש להתחבר קודם.</p>
+              ) : (
+                <>
+                  <div style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
+                    <input
+                      value={friendName}
+                      onChange={(e) => {
+                        setFriendName(e.target.value);
+                        setFriendStatus(null);
+                        setInviteStatusText("");
+                      }}
+                      placeholder="שם החבר"
+                      style={{
+                        flex: 1,
+                        minWidth: 220,
+                        height: 50,
+                        borderRadius: 12,
+                        border: "1px solid var(--border)",
+                        background: "var(--bg-elevated)",
+                        color: "var(--text)",
+                        padding: "0 14px",
+                        fontSize: 16
+                      }}
+                    />
+
+                    <button
+                      type="button"
+                      onClick={handleCheckFriend}
+                      style={{
+                        width: 120,
+                        height: 50,
+                        borderRadius: 12,
+                        border: "none",
+                        background: "var(--accent-strong)",
+                        color: "#fff",
+                        fontWeight: 700,
+                        cursor: "pointer"
+                      }}
+                    >
+                      אישור
+                    </button>
+                  </div>
+
+                  {friendStatus ? (
+                    <div
+                      style={{
+                        border: "1px solid var(--border)",
+                        borderRadius: 14,
+                        padding: 14,
+                        background: "var(--bg-soft)"
+                      }}
+                    >
+                      {friendStatus.online ? (
+                        <>
+                          <div
+                            style={{
+                              fontWeight: 700,
+                              color: "var(--accent-strong)",
+                              marginBottom: 10
+                            }}
+                          >
+                            {friendStatus.friendName} מחובר
+                          </div>
+
+                          {!outgoingInvite ? (
+                            <button
+                              type="button"
+                              onClick={handleSendInvite}
+                              style={{
+                                height: 44,
+                                borderRadius: 12,
+                                border: "none",
+                                background: "var(--accent)",
+                                color: "#fff",
+                                fontWeight: 700,
+                                cursor: "pointer",
+                                padding: "0 18px"
+                              }}
+                            >
+                              הזמנה
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={handleCancelInvite}
+                              style={{
+                                height: 44,
+                                borderRadius: 12,
+                                border: "1px solid var(--border)",
+                                background: "var(--bg-elevated)",
+                                color: "var(--danger)",
+                                fontWeight: 700,
+                                cursor: "pointer",
+                                padding: "0 18px"
+                              }}
+                            >
+                              בטל הזמנה
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <div
+                            style={{
+                              fontWeight: 700,
+                              color: "var(--danger)",
+                              marginBottom: 10
+                            }}
+                          >
+                            {friendName.trim()} לא מחובר
+                          </div>
+
+                          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                            <Link
+                              href={`/game/${privateRoomId || "demo-room"}`}
+                              style={{
+                                height: 44,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                padding: "0 16px",
+                                borderRadius: 12,
+                                background: "var(--accent)",
+                                color: "#fff",
+                                fontWeight: 700
+                              }}
+                            >
+                              קישור לחדר
+                            </Link>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFriendName("");
+                                setFriendStatus(null);
+                                setInviteStatusText("");
+                              }}
+                              style={{
+                                height: 44,
+                                borderRadius: 12,
+                                border: "1px solid var(--border)",
+                                background: "var(--bg-elevated)",
+                                color: "var(--text)",
+                                fontWeight: 700,
+                                cursor: "pointer",
+                                padding: "0 16px"
+                              }}
+                            >
+                              לבחור שחקן אחר
+                            </button>
+                          </div>
+                        </>
+                      )}
+
+                      {inviteStatusText ? (
+                        <div
+                          style={{
+                            marginTop: 12,
+                            fontWeight: 700,
+                            color: "var(--text-soft)"
+                          }}
+                        >
+                          {inviteStatusText}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </>
+              )}
+            </div>
+          </div>
         </div>
       </div>
+
+      {authOpen ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background:
+              "linear-gradient(90deg, rgba(19,14,10,0.98) 0%, rgba(37,30,25,0.95) 45%, rgba(54,45,38,0.92) 100%)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: 24
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 520,
+              background: "linear-gradient(180deg, #2b2622 0%, #231f1b 100%)",
+              color: "#f2ede7",
+              border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: 24,
+              padding: 28,
+              boxShadow: "0 24px 60px rgba(0,0,0,0.45)"
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                borderBottom: "1px solid rgba(255,255,255,0.12)",
+                marginBottom: 22
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode("login");
+                  setError("");
+                }}
+                style={{
+                  flex: 1,
+                  background: "transparent",
+                  border: "none",
+                  color: authMode === "login" ? "#ff8a2a" : "#e5ddd3",
+                  fontSize: "1.05rem",
+                  fontWeight: 700,
+                  padding: "12px 10px",
+                  cursor: "pointer",
+                  borderBottom:
+                    authMode === "login" ? "2px solid #ff8a2a" : "2px solid transparent"
+                }}
+              >
+                התחברות
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode("register");
+                  setError("");
+                }}
+                style={{
+                  flex: 1,
+                  background: "transparent",
+                  border: "none",
+                  color: authMode === "register" ? "#ff8a2a" : "#e5ddd3",
+                  fontSize: "1.05rem",
+                  fontWeight: 700,
+                  padding: "12px 10px",
+                  cursor: "pointer",
+                  borderBottom:
+                    authMode === "register" ? "2px solid #ff8a2a" : "2px solid transparent"
+                }}
+              >
+                הרשמה
+              </button>
+            </div>
+
+            <div
+              style={{
+                marginBottom: 12,
+                fontWeight: 700,
+                fontSize: "1rem"
+              }}
+            >
+              שם משתמש
+            </div>
+
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handlePrimaryAction();
+                }
+              }}
+              placeholder="הכנס שם משתמש"
+              autoFocus
+              style={{
+                width: "100%",
+                height: 54,
+                borderRadius: 16,
+                border: "2px solid #4ea1ff",
+                background: "#17130f",
+                color: "#fff",
+                padding: "0 16px",
+                fontSize: "1rem",
+                outline: "none",
+                marginBottom: 12
+              }}
+            />
+
+            <div
+              style={{
+                color: "#a9a29b",
+                lineHeight: 1.6,
+                marginBottom: 18,
+                fontSize: 14
+              }}
+            >
+              {authMode === "login"
+                ? "הזן שם משתמש קיים כדי להתחבר."
+                : "בחר שם משתמש חדש. כל עוד הוא מחובר, אף אחד אחר לא יוכל להשתמש בו."}
+            </div>
+
+            {error ? (
+              <div
+                style={{
+                  color: "#ff8f8f",
+                  marginBottom: 14,
+                  fontSize: 14,
+                  fontWeight: 700
+                }}
+              >
+                {error}
+              </div>
+            ) : null}
+
+            <div style={{ display: "flex", gap: 12 }}>
+              <button
+                type="button"
+                onClick={handlePrimaryAction}
+                disabled={loadingAuth}
+                style={{
+                  flex: 1,
+                  height: 50,
+                  borderRadius: 14,
+                  border: "none",
+                  background: "#8b5e3c",
+                  color: "#fff",
+                  fontWeight: 700,
+                  cursor: loadingAuth ? "default" : "pointer",
+                  opacity: loadingAuth ? 0.7 : 1
+                }}
+              >
+                {loadingAuth ? "טוען..." : authTitle}
+              </button>
+
+              <button
+                type="button"
+                onClick={closeAuth}
+                disabled={loadingAuth}
+                style={{
+                  width: 110,
+                  height: 50,
+                  borderRadius: 14,
+                  border: "1px solid rgba(255,255,255,0.16)",
+                  background: "transparent",
+                  color: "#f2ede7",
+                  fontWeight: 700,
+                  cursor: loadingAuth ? "default" : "pointer",
+                  opacity: loadingAuth ? 0.7 : 1
+                }}
+              >
+                סגור
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <InviteDialog
         open={!!incomingInvite}
@@ -217,16 +998,6 @@ export default function HomeShell() {
         onAccept={handleAcceptInvite}
         onReject={handleRejectInvite}
       />
-
-      {authOpen && (
-        <div>
-          <h2>{authMode === "login" ? "התחברות" : "הרשמה"}</h2>
-          <input value={input} onChange={(e) => setInput(e.target.value)} />
-          <button onClick={handlePrimaryAction}>אישור</button>
-          <button onClick={closeAuth}>סגור</button>
-          {error && <div>{error}</div>}
-        </div>
-      )}
     </>
   );
 }
