@@ -14,6 +14,7 @@ import {
 import { socket } from "../lib/socket";
 import InviteDialog from "./InviteDialog";
 import ThemeToggle from "./ThemeToggle";
+import { generateRoomId } from "../lib/utils";
 import type {
   IncomingInvite,
   InviteAcceptedPayload,
@@ -23,10 +24,6 @@ import type {
 } from "../lib/types";
 
 type AuthMode = "login" | "register";
-
-function createRoomLinkId() {
-  return `room_${Math.random().toString(36).slice(2, 10)}_${Date.now()}`;
-}
 
 export default function HomeShell() {
   const router = useRouter();
@@ -52,7 +49,7 @@ export default function HomeShell() {
     const storedTheme = getStoredTheme();
     setTheme(storedTheme);
     applyTheme(storedTheme);
-    setPrivateRoomId(createRoomLinkId());
+    setPrivateRoomId(generateRoomId(6));
   }, []);
 
   useEffect(() => {
@@ -198,7 +195,7 @@ export default function HomeShell() {
       setHoverOpen(false);
       setFriendName("");
       setFriendStatus(null);
-      setPrivateRoomId(createRoomLinkId());
+      setPrivateRoomId(generateRoomId(6));
       setOutgoingInvite(null);
       setInviteStatusText("");
     });
@@ -293,9 +290,21 @@ export default function HomeShell() {
   }
 
   async function handleCopyRoomLink() {
-    const url = `${window.location.origin}/game/${privateRoomId}`;
-    await navigator.clipboard.writeText(url);
-    alert("הקישור הועתק");
+    try {
+      const url = `${window.location.origin}/game/${privateRoomId}`;
+      await navigator.clipboard.writeText(url);
+      setInviteStatusText("הקישור הועתק");
+    } catch {
+      setInviteStatusText("לא ניתן היה להעתיק את הקישור");
+    }
+  }
+
+  function handleCreateNewPrivateRoom() {
+    setPrivateRoomId(generateRoomId(6));
+  }
+
+  function handleEnterPrivateRoom() {
+    router.push(`/game/${privateRoomId}`);
   }
 
   return (
@@ -320,6 +329,7 @@ export default function HomeShell() {
           }}
         >
           <div
+            className="top-nav"
             style={{
               maxWidth: 1200,
               margin: "0 auto",
@@ -427,6 +437,7 @@ export default function HomeShell() {
         </div>
 
         <div
+          className="page-wrap"
           style={{
             maxWidth: 1200,
             margin: "0 auto",
@@ -435,6 +446,7 @@ export default function HomeShell() {
         >
           <div style={{ marginBottom: 28 }}>
             <h1
+              className="hero-title"
               style={{
                 margin: 0,
                 fontSize: "2.4rem",
@@ -458,6 +470,7 @@ export default function HomeShell() {
           </div>
 
           <div
+            className="home-grid"
             style={{
               display: "grid",
               gridTemplateColumns: "repeat(12, 1fr)",
@@ -465,20 +478,15 @@ export default function HomeShell() {
             }}
           >
             <div
+              className="app-shell-card"
               style={{
                 gridColumn: "span 4",
-                background: "var(--bg-elevated)",
-                border: "1px solid var(--border)",
-                borderRadius: 22,
-                padding: 22,
-                boxShadow: "var(--shadow)"
+                padding: 22
               }}
             >
-              <div style={{ fontSize: "1.2rem", fontWeight: 800, marginBottom: 10 }}>
-                משחק מהיר
-              </div>
+              <div className="section-title">משחק מהיר</div>
 
-              <p style={{ color: "var(--text-soft)", lineHeight: 1.7, marginTop: 0 }}>
+              <p className="section-text">
                 כניסה מיידית לחדר ההדגמה המקומי. מתאים לבדיקה, תרגול, או משחק על אותו
                 מחשב לשני הצדדים.
               </p>
@@ -488,7 +496,6 @@ export default function HomeShell() {
                 style={{
                   display: "block",
                   textAlign: "center",
-                  textDecoration: "none",
                   background: "var(--accent)",
                   color: "#fff",
                   padding: "14px 16px",
@@ -502,20 +509,15 @@ export default function HomeShell() {
             </div>
 
             <div
+              className="app-shell-card"
               style={{
                 gridColumn: "span 4",
-                background: "var(--bg-elevated)",
-                border: "1px solid var(--border)",
-                borderRadius: 22,
-                padding: 22,
-                boxShadow: "var(--shadow)"
+                padding: 22
               }}
             >
-              <div style={{ fontSize: "1.2rem", fontWeight: 800, marginBottom: 10 }}>
-                חדר פרטי מהיר
-              </div>
+              <div className="section-title">חדר פרטי מהיר</div>
 
-              <p style={{ color: "var(--text-soft)", lineHeight: 1.7, marginTop: 0 }}>
+              <p className="section-text">
                 צור קישור לחדר פרטי ושלח אותו לחבר. כל חדר פרטי מבודד ממשחקים אחרים.
               </p>
 
@@ -536,12 +538,13 @@ export default function HomeShell() {
                   : ""}
               </div>
 
-              <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+              <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
                 <button
                   type="button"
                   onClick={handleCopyRoomLink}
                   style={{
                     flex: 1,
+                    minWidth: 120,
                     height: 46,
                     borderRadius: 12,
                     border: "none",
@@ -556,9 +559,10 @@ export default function HomeShell() {
 
                 <button
                   type="button"
-                  onClick={() => setPrivateRoomId(createRoomLinkId())}
+                  onClick={handleCreateNewPrivateRoom}
                   style={{
                     flex: 1,
+                    minWidth: 120,
                     height: 46,
                     borderRadius: 12,
                     border: "1px solid var(--border)",
@@ -571,77 +575,62 @@ export default function HomeShell() {
                   צור חדר חדש
                 </button>
               </div>
+
+              <button
+                type="button"
+                onClick={handleEnterPrivateRoom}
+                style={{
+                  width: "100%",
+                  height: 46,
+                  borderRadius: 12,
+                  border: "none",
+                  background: "var(--accent)",
+                  color: "#fff",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  marginTop: 12
+                }}
+              >
+                כניסה לחדר הפרטי
+              </button>
             </div>
 
             <div
+              className="app-shell-card"
               style={{
                 gridColumn: "span 4",
-                background: "var(--bg-elevated)",
-                border: "1px solid var(--border)",
-                borderRadius: 22,
-                padding: 22,
-                boxShadow: "var(--shadow)"
+                padding: 22
               }}
             >
-              <div style={{ fontSize: "1.2rem", fontWeight: 800, marginBottom: 10 }}>
-                מצב משתמש
+              <h2 style={{ marginTop: 0, marginBottom: 16 }}>מחוברים כרגע</h2>
+
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {connectedUsers.length === 0 ? (
+                  <div style={{ color: "var(--text-soft)" }}>אין משתמשים מחוברים כרגע</div>
+                ) : (
+                  connectedUsers.map((user) => (
+                    <div
+                      key={user.username}
+                      style={{
+                        padding: "8px 12px",
+                        background: "var(--bg-soft)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 999,
+                        fontWeight: 700
+                      }}
+                    >
+                      {user.username}
+                    </div>
+                  ))
+                )}
               </div>
-
-              {!username ? (
-                <>
-                  <p style={{ color: "var(--text-soft)", lineHeight: 1.7, marginTop: 0 }}>
-                    עדיין לא התחברת. כדי לשלוח הזמנה לחבר או להצטרף כחלק ממשחק אונליין,
-                    יש להתחבר קודם.
-                  </p>
-
-                  <button
-                    type="button"
-                    onClick={() => openAuth("login")}
-                    style={{
-                      width: "100%",
-                      height: 46,
-                      borderRadius: 12,
-                      border: "none",
-                      background: "var(--accent)",
-                      color: "#fff",
-                      fontWeight: 700,
-                      cursor: "pointer",
-                      marginTop: 16
-                    }}
-                  >
-                    התחברות
-                  </button>
-                </>
-              ) : (
-                <>
-                  <div
-                    style={{
-                      background: "var(--bg-soft)",
-                      border: "1px solid var(--border)",
-                      borderRadius: 14,
-                      padding: "14px 16px",
-                      fontWeight: 700,
-                      color: "var(--text)"
-                    }}
-                  >
-                    מחובר כ־{username}
-                  </div>
-
-                  <p style={{ color: "var(--text-soft)", lineHeight: 1.7, marginTop: 14 }}>
-                    כעת אפשר להזמין חבר למשחק או להצטרף לחדר פרטי.
-                  </p>
-                </>
-              )}
             </div>
 
             <div
+              className="app-shell-card"
               style={{
-                gridColumn: "span 7",
-                background: "var(--bg-elevated)",
-                border: "1px solid var(--border)",
-                borderRadius: 22,
-                padding: 22,
-                boxShadow: "var(--shadow)"
+                gridColumn: "span 12",
+                padding: 22
               }}
             >
               <h2 style={{ marginTop: 0, marginBottom: 16 }}>הזמן חבר למשחק</h2>
@@ -650,7 +639,7 @@ export default function HomeShell() {
                 <p style={{ color: "var(--text-soft)" }}>כדי להזמין חבר, יש להתחבר קודם.</p>
               ) : (
                 <>
-                  <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
+                  <div style={{ display: "flex", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
                     <input
                       value={friendName}
                       onChange={(e) => {
@@ -661,6 +650,7 @@ export default function HomeShell() {
                       placeholder="שם החבר"
                       style={{
                         flex: 1,
+                        minWidth: 220,
                         height: 50,
                         borderRadius: 12,
                         border: "1px solid var(--border)",
@@ -676,6 +666,7 @@ export default function HomeShell() {
                       onClick={handleCheckFriend}
                       style={{
                         width: 120,
+                        height: 50,
                         borderRadius: 12,
                         border: "none",
                         background: "var(--accent-strong)",
@@ -757,11 +748,10 @@ export default function HomeShell() {
                             {friendName.trim()} לא מחובר
                           </div>
 
-                          <div style={{ display: "flex", gap: 10 }}>
+                          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                             <Link
                               href={`/game/${privateRoomId || "demo-room"}`}
                               style={{
-                                textDecoration: "none",
                                 height: 44,
                                 display: "inline-flex",
                                 alignItems: "center",
@@ -815,40 +805,6 @@ export default function HomeShell() {
                   ) : null}
                 </>
               )}
-            </div>
-
-            <div
-              style={{
-                gridColumn: "span 5",
-                background: "var(--bg-elevated)",
-                border: "1px solid var(--border)",
-                borderRadius: 22,
-                padding: 22,
-                boxShadow: "var(--shadow)"
-              }}
-            >
-              <h2 style={{ marginTop: 0, marginBottom: 16 }}>מחוברים כרגע</h2>
-
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {connectedUsers.length === 0 ? (
-                  <div style={{ color: "var(--text-soft)" }}>אין משתמשים מחוברים כרגע</div>
-                ) : (
-                  connectedUsers.map((user) => (
-                    <div
-                      key={user.username}
-                      style={{
-                        padding: "8px 12px",
-                        background: "var(--bg-soft)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 999,
-                        fontWeight: 700
-                      }}
-                    >
-                      {user.username}
-                    </div>
-                  ))
-                )}
-              </div>
             </div>
           </div>
         </div>
