@@ -10,30 +10,24 @@ type BoardPiece =
     }
   | null;
 
-function getPieceSymbol(piece: BoardPiece) {
-  if (!piece) return "";
-
-  const map = {
-    white: {
-      king: "♔",
-      queen: "♕",
-      rook: "♖",
-      bishop: "♗",
-      knight: "♘",
-      pawn: "♙"
-    },
-    brown: {
-      king: "♚",
-      queen: "♛",
-      rook: "♜",
-      bishop: "♝",
-      knight: "♞",
-      pawn: "♟"
-    }
-  };
-
-  return map[piece.color][piece.type];
-}
+const PIECE_IMAGES: Record<PieceColor, Record<PieceType, string>> = {
+  white: {
+    king: "/pieces/white-king.png",
+    queen: "/pieces/white-queen.png",
+    rook: "/pieces/white-rook.png",
+    bishop: "/pieces/white-bishop.png",
+    knight: "/pieces/white-knight.png",
+    pawn: "/pieces/white-pawn.png"
+  },
+  brown: {
+    king: "/pieces/brown-king.png",
+    queen: "/pieces/brown-queen.png",
+    rook: "/pieces/brown-rook.png",
+    bishop: "/pieces/brown-bishop.png",
+    knight: "/pieces/brown-knight.png",
+    pawn: "/pieces/brown-pawn.png"
+  }
+};
 
 export default function Square({
   isDark,
@@ -58,6 +52,8 @@ export default function Square({
   rankLabel?: string;
   onClick: () => void;
 }) {
+  const pieceSrc = piece ? PIECE_IMAGES[piece.color][piece.type] : null;
+
   return (
     <button
       type="button"
@@ -84,19 +80,23 @@ export default function Square({
         alignItems: "center",
         justifyContent: "center",
         cursor: "pointer",
-        userSelect: "none"
+        userSelect: "none",
+        overflow: "hidden"
       }}
     >
-      {piece ? (
-        <span
+      {pieceSrc ? (
+        <img
+          src={pieceSrc}
+          alt=""
+          draggable={false}
           style={{
-            fontSize: "clamp(1.2rem, 5vw, 2.7rem)",
-            lineHeight: 1,
-            filter: "drop-shadow(0 1px 1px rgba(0,0,0,0.25))"
+            width: "84%",
+            height: "84%",
+            objectFit: "contain",
+            pointerEvents: "none",
+            userSelect: "none"
           }}
-        >
-          {getPieceSymbol(piece)}
-        </span>
+        />
       ) : null}
 
       {canMove ? (
@@ -130,7 +130,8 @@ export default function Square({
             left: "6%",
             fontSize: "clamp(0.5rem, 1.6vw, 0.82rem)",
             fontWeight: 700,
-            color: isDark ? "#f7ecdc" : "#5b3a25"
+            color: isDark ? "#f7ecdc" : "#5b3a25",
+            pointerEvents: "none"
           }}
         >
           {fileLabel}
@@ -145,7 +146,8 @@ export default function Square({
             right: "6%",
             fontSize: "clamp(0.5rem, 1.6vw, 0.82rem)",
             fontWeight: 700,
-            color: isDark ? "#f7ecdc" : "#5b3a25"
+            color: isDark ? "#f7ecdc" : "#5b3a25",
+            pointerEvents: "none"
           }}
         >
           {rankLabel}
