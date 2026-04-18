@@ -1,5 +1,7 @@
 "use client";
 
+import { useMemo, useState } from "react";
+
 type PieceColor = "white" | "brown";
 type PieceType = "king" | "queen" | "rook" | "bishop" | "knight" | "pawn";
 
@@ -10,24 +12,16 @@ type BoardPiece =
     }
   | null;
 
-const PIECE_IMAGES: Record<PieceColor, Record<PieceType, string>> = {
-  white: {
-    king: "/pieces/white-king.png",
-    queen: "/pieces/white-queen.png",
-    rook: "/pieces/white-rook.png",
-    bishop: "/pieces/white-bishop.png",
-    knight: "/pieces/white-knight.png",
-    pawn: "/pieces/white-pawn.png"
-  },
-  brown: {
-    king: "/pieces/brown-king.png",
-    queen: "/pieces/brown-queen.png",
-    rook: "/pieces/brown-rook.png",
-    bishop: "/pieces/brown-bishop.png",
-    knight: "/pieces/brown-knight.png",
-    pawn: "/pieces/brown-pawn.png"
-  }
-};
+function getCandidatePaths(piece: NonNullable<BoardPiece>) {
+  return [
+    `/pieces/${piece.color}-${piece.type}.png`,
+    `/pieces/${piece.color}-${piece.type}.svg`,
+    `/pieces/${piece.color}_${piece.type}.png`,
+    `/pieces/${piece.color}_${piece.type}.svg`,
+    `/pieces/${piece.color}${piece.type}.png`,
+    `/pieces/${piece.color}${piece.type}.svg`
+  ];
+}
 
 export default function Square({
   isDark,
@@ -52,7 +46,12 @@ export default function Square({
   rankLabel?: string;
   onClick: () => void;
 }) {
-  const pieceSrc = piece ? PIECE_IMAGES[piece.color][piece.type] : null;
+  const candidates = useMemo(() => (piece ? getCandidatePaths(piece) : []), [piece]);
+  const [imageIndex, setImageIndex] = useState(0);
+  const [imageFailed, setImageFailed] = useState(false);
+
+  const pieceSrc =
+    piece && !imageFailed && candidates.length > 0 ? candidates[imageIndex] : null;
 
   return (
     <button
@@ -89,6 +88,13 @@ export default function Square({
           src={pieceSrc}
           alt=""
           draggable={false}
+          onError={() => {
+            if (imageIndex < candidates.length - 1) {
+              setImageIndex((prev) => prev + 1);
+            } else {
+              setImageFailed(true);
+            }
+          }}
           style={{
             width: "84%",
             height: "84%",
