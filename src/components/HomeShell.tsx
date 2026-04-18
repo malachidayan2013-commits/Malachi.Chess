@@ -33,6 +33,7 @@ export default function HomeShell() {
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [input, setInput] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loadingAuth, setLoadingAuth] = useState(false);
   const [hoverOpen, setHoverOpen] = useState(false);
@@ -44,6 +45,7 @@ export default function HomeShell() {
   const [privateRoomId, setPrivateRoomId] = useState("");
   const [outgoingInvite, setOutgoingInvite] = useState<OutgoingInviteState | null>(null);
   const [inviteStatusText, setInviteStatusText] = useState("");
+  const [selectedConnectedUser, setSelectedConnectedUser] = useState<string | null>(null);
 
   useEffect(() => {
     const storedTheme = getStoredTheme();
@@ -117,6 +119,7 @@ export default function HomeShell() {
   function openAuth(mode: AuthMode) {
     setAuthMode(mode);
     setInput("");
+    setPassword("");
     setError("");
     setLoadingAuth(false);
     setAuthOpen(true);
@@ -126,6 +129,7 @@ export default function HomeShell() {
     if (loadingAuth) return;
     setAuthOpen(false);
     setInput("");
+    setPassword("");
     setError("");
     setLoadingAuth(false);
   }
@@ -137,14 +141,21 @@ export default function HomeShell() {
     setLoadingAuth(false);
     setAuthOpen(false);
     setInput("");
+    setPassword("");
     setError("");
   }
 
   function handlePrimaryAction() {
-    const normalized = input.trim();
+    const normalizedUsername = input.trim();
+    const normalizedPassword = password.trim();
 
-    if (!normalized) {
+    if (!normalizedUsername) {
       setError("יש להזין שם משתמש");
+      return;
+    }
+
+    if (!normalizedPassword) {
+      setError("יש להזין סיסמה");
       return;
     }
 
@@ -156,34 +167,20 @@ export default function HomeShell() {
     setLoadingAuth(true);
     setError("");
 
-    let handled = false;
-
-    const timeoutId = window.setTimeout(() => {
-      if (!handled) {
-        handled = true;
-        setLoadingAuth(false);
-        setError("השרת לא הגיב בזמן. נסה שוב.");
-      }
-    }, 5000);
+    const eventName = authMode === "login" ? "auth:login" : "auth:register";
 
     socket.emit(
-      "user:register",
-      { username: normalized },
-      (response: { ok: boolean; message?: string }) => {
-        if (handled) return;
-        handled = true;
-        clearTimeout(timeoutId);
+      eventName,
+      { username: normalizedUsername, password: normalizedPassword },
+      (response: { ok: boolean; message?: string; username?: string }) => {
+        setLoadingAuth(false);
 
         if (!response?.ok) {
-          setLoadingAuth(false);
-          setError(
-            response?.message ||
-              (authMode === "login" ? "לא ניתן להתחבר" : "לא ניתן להירשם")
-          );
+          setError(response?.message || "אירעה שגיאה.");
           return;
         }
 
-        finishAuthSuccess(normalized);
+        finishAuthSuccess(response.username || normalizedUsername);
       }
     );
   }
@@ -198,7 +195,35 @@ export default function HomeShell() {
       setPrivateRoomId(generateRoomId(6));
       setOutgoingInvite(null);
       setInviteStatusText("");
+      setSelectedConnectedUser(null);
     });
+  }
+
+  function handleDeleteUser() {
+    const pass = window.prompt("הכנס את הסיסמה כדי למחוק את המשתמש");
+
+    if (!pass) return;
+
+    socket.emit(
+      "auth:delete",
+      { username, password: pass },
+      (response: { ok: boolean; message?: string }) => {
+        if (!response?.ok) {
+          window.alert(response?.message || "לא ניתן למחוק את המשתמש.");
+          return;
+        }
+
+        clearStoredUsername();
+        setUsername("");
+        setHoverOpen(false);
+        setFriendName("");
+        setFriendStatus(null);
+        setOutgoingInvite(null);
+        setInviteStatusText("");
+        setSelectedConnectedUser(null);
+        window.alert("המשתמש נמחק בהצלחה.");
+      }
+    );
   }
 
   function handleCheckFriend() {
@@ -224,15 +249,14 @@ export default function HomeShell() {
     );
   }
 
-  function handleSendInvite() {
-    const normalized = friendName.trim();
-    if (!username || !normalized || outgoingInvite) return;
+  function handleSendInviteTo(name: string) {
+    if (!username || !name || outgoingInvite) return;
 
     socket.emit(
       "invite:create",
       {
         fromUsername: username,
-        toUsername: normalized
+        toUsername: name
       },
       (response: { ok: boolean; message?: string; inviteId?: string }) => {
         if (!response.ok || !response.inviteId) {
@@ -242,11 +266,16 @@ export default function HomeShell() {
 
         setOutgoingInvite({
           inviteId: response.inviteId,
-          toUsername: normalized
+          toUsername: name
         });
-        setInviteStatusText(`ההזמנה נשלחה ל־${normalized}`);
+        setInviteStatusText(`ההזמנה נשלחה ל־${name}`);
       }
     );
+  }
+
+  function handleSendInvite() {
+    const normalized = friendName.trim();
+    handleSendInviteTo(normalized);
   }
 
   function handleCancelInvite() {
@@ -307,6 +336,10 @@ export default function HomeShell() {
     router.push(`/game/${privateRoomId}`);
   }
 
+  function toggleConnectedUser(name: string) {
+    setSelectedConnectedUser((prev) => (prev === name ? null : name));
+  }
+
   return (
     <>
       <div
@@ -344,10 +377,14 @@ export default function HomeShell() {
               style={{
                 fontSize: "2rem",
                 fontWeight: 900,
-                color: "var(--accent)"
+                color: "var(--accent)",
+                display: "flex",
+                alignItems: "center",
+                gap: 10
               }}
             >
-              אתר שחמט
+              <span style={{ fontSize: "1.6rem" }}>♟️</span>
+              <span>אתר שחמט</span>
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
@@ -377,7 +414,7 @@ export default function HomeShell() {
                     style={{
                       position: "relative",
                       display: "inline-block",
-                      paddingBottom: 48
+                      paddingBottom: 74
                     }}
                   >
                     <button
@@ -401,13 +438,16 @@ export default function HomeShell() {
                           position: "absolute",
                           top: 28,
                           left: 0,
-                          minWidth: 140,
+                          minWidth: 170,
                           background: "var(--bg-elevated)",
                           border: "1px solid var(--border)",
                           borderRadius: 12,
                           boxShadow: "var(--shadow)",
                           padding: 8,
-                          zIndex: 20
+                          zIndex: 20,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 6
                         }}
                       >
                         <button
@@ -421,11 +461,29 @@ export default function HomeShell() {
                             padding: "10px 12px",
                             borderRadius: 8,
                             cursor: "pointer",
-                            color: "var(--danger)",
+                            color: "var(--text)",
                             fontWeight: 700
                           }}
                         >
                           התנתקות
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleDeleteUser}
+                          style={{
+                            width: "100%",
+                            border: "none",
+                            background: "transparent",
+                            textAlign: "right",
+                            padding: "10px 12px",
+                            borderRadius: 8,
+                            cursor: "pointer",
+                            color: "var(--danger)",
+                            fontWeight: 700
+                          }}
+                        >
+                          מחק משתמש
                         </button>
                       </div>
                     ) : null}
@@ -475,62 +533,42 @@ export default function HomeShell() {
               style={{
                 position: "relative",
                 zIndex: 1,
-                display: "flex",
-                alignItems: "flex-start",
-                justifyContent: "space-between",
-                gap: 20,
-                flexWrap: "wrap"
+                maxWidth: 760
               }}
             >
-              <div style={{ maxWidth: 760 }}>
-                <div
-                  className="soft-badge"
-                  style={{
-                    marginBottom: 14
-                  }}
-                >
-                  ♟️ שחמט אונליין
-                </div>
-
-                <h1
-                  className="hero-title"
-                  style={{
-                    margin: 0,
-                    fontSize: "2.7rem",
-                    lineHeight: 1.15,
-                    fontWeight: 900
-                  }}
-                >
-                  שחק מול חברים, פתח חדר פרטי, או תרגל בחדר הדגמה
-                </h1>
-
-                <p
-                  style={{
-                    margin: "14px 0 0",
-                    color: "var(--text-soft)",
-                    fontSize: "1.05rem",
-                    lineHeight: 1.85,
-                    maxWidth: 760
-                  }}
-                >
-                  התחבר, הזמן חבר למשחק, או פתח חדר פרטי. בנוסף יש גם חדר הדגמה מקומי
-                  שבו אפשר לשחק את שני הצדדים על אותו מסך.
-                </p>
-              </div>
-
               <div
-                className="app-shell-card"
+                className="soft-badge"
                 style={{
-                  minWidth: 220,
-                  padding: "16px 18px",
-                  background: "var(--bg-elevated)"
+                  marginBottom: 14
                 }}
               >
-                <div style={{ fontWeight: 900, marginBottom: 10 }}>מצב נוכחי</div>
-                <div style={{ color: "var(--text-soft)", lineHeight: 1.7 }}>
-                  {username ? `מחובר כ־${username}` : "לא מחובר כרגע"}
-                </div>
+                ♟️ שחמט אונליין
               </div>
+
+              <h1
+                className="hero-title"
+                style={{
+                  margin: 0,
+                  fontSize: "2.7rem",
+                  lineHeight: 1.15,
+                  fontWeight: 900
+                }}
+              >
+                שחק מול חברים, פתח חדר פרטי, או תרגל בחדר הדגמה
+              </h1>
+
+              <p
+                style={{
+                  margin: "14px 0 0",
+                  color: "var(--text-soft)",
+                  fontSize: "1.05rem",
+                  lineHeight: 1.85,
+                  maxWidth: 760
+                }}
+              >
+                התחבר, הזמן חבר למשחק, או פתח חדר פרטי. בנוסף יש גם חדר הדגמה מקומי
+                שבו אפשר לשחק את שני הצדדים על אותו מסך.
+              </p>
             </div>
           </div>
 
@@ -655,15 +693,73 @@ export default function HomeShell() {
             >
               <div className="section-title">מחוברים כרגע</div>
 
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {connectedUsers.length === 0 ? (
                   <div style={{ color: "var(--text-soft)" }}>אין משתמשים מחוברים כרגע</div>
                 ) : (
-                  connectedUsers.map((user) => (
-                    <div key={user.username} className="connected-pill">
-                      {user.username}
-                    </div>
-                  ))
+                  connectedUsers.map((user) => {
+                    const isSelf = user.username === username;
+                    const isOpen = selectedConnectedUser === user.username;
+                    const isOutgoing = outgoingInvite?.toUsername === user.username;
+
+                    return (
+                      <div key={user.username}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (isSelf) return;
+                            toggleConnectedUser(user.username);
+                          }}
+                          className="connected-pill"
+                          style={{
+                            width: "100%",
+                            textAlign: "right",
+                            cursor: isSelf ? "default" : "pointer",
+                            opacity: isSelf ? 0.7 : 1
+                          }}
+                        >
+                          {user.username}
+                          {isSelf ? " (אתה)" : ""}
+                        </button>
+
+                        {isOpen && !isSelf ? (
+                          <div
+                            style={{
+                              marginTop: 8,
+                              display: "flex",
+                              gap: 8
+                            }}
+                          >
+                            {!isOutgoing ? (
+                              <button
+                                type="button"
+                                onClick={() => handleSendInviteTo(user.username)}
+                                className="app-button-primary"
+                                style={{
+                                  flex: 1,
+                                  height: 40
+                                }}
+                              >
+                                הזמנה
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={handleCancelInvite}
+                                className="app-button-danger"
+                                style={{
+                                  flex: 1,
+                                  height: 40
+                                }}
+                              >
+                                בטל הזמנה
+                              </button>
+                            )}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -873,6 +969,8 @@ export default function HomeShell() {
                 type="button"
                 onClick={() => {
                   setAuthMode("login");
+                  setInput("");
+                  setPassword("");
                   setError("");
                 }}
                 style={{
@@ -895,6 +993,8 @@ export default function HomeShell() {
                 type="button"
                 onClick={() => {
                   setAuthMode("register");
+                  setInput("");
+                  setPassword("");
                   setError("");
                 }}
                 style={{
@@ -916,7 +1016,7 @@ export default function HomeShell() {
 
             <div
               style={{
-                marginBottom: 12,
+                marginBottom: 10,
                 fontWeight: 700,
                 fontSize: "1rem"
               }}
@@ -927,14 +1027,43 @@ export default function HomeShell() {
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              placeholder="הכנס שם משתמש"
+              autoFocus
+              style={{
+                width: "100%",
+                height: 54,
+                borderRadius: 16,
+                border: "2px solid #4ea1ff",
+                background: "#17130f",
+                color: "#fff",
+                padding: "0 16px",
+                fontSize: "1rem",
+                outline: "none",
+                marginBottom: 14
+              }}
+            />
+
+            <div
+              style={{
+                marginBottom: 10,
+                fontWeight: 700,
+                fontSize: "1rem"
+              }}
+            >
+              סיסמה
+            </div>
+
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
                   handlePrimaryAction();
                 }
               }}
-              placeholder="הכנס שם משתמש"
-              autoFocus
+              placeholder="הכנס סיסמה"
               style={{
                 width: "100%",
                 height: 54,
@@ -958,8 +1087,8 @@ export default function HomeShell() {
               }}
             >
               {authMode === "login"
-                ? "הזן שם משתמש קיים כדי להתחבר."
-                : "בחר שם משתמש חדש. כל עוד הוא מחובר, אף אחד אחר לא יוכל להשתמש בו."}
+                ? "הזן שם משתמש וסיסמה של משתמש שנרשם בעבר."
+                : "בחר שם משתמש חדש וסיסמה. אם השם כבר קיים במערכת, לא ניתן יהיה להירשם איתו."}
             </div>
 
             {error ? (

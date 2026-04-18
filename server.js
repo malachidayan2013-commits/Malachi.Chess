@@ -21,6 +21,8 @@ const {
   offerRematch,
   declineRematch
 } = require("./src/server/state");
+const { createUser, loginUser, deleteUser } = require("./src/server/auth");
+const { initDatabase } = require("./src/server/db");
 
 const dev = process.env.NODE_ENV !== "production";
 const host = "0.0.0.0";
@@ -29,7 +31,9 @@ const port = parseInt(process.env.PORT || "3000", 10);
 const app = next({ dev, hostname: host, port });
 const handle = app.getRequestHandler();
 
-app.prepare().then(() => {
+app.prepare().then(async () => {
+  await initDatabase();
+
   const server = http.createServer((req, res) => handle(req, res));
 
   const io = new Server(server, {
@@ -37,6 +41,105 @@ app.prepare().then(() => {
   });
 
   io.on("connection", (socket) => {
+    socket.on("auth:register", async ({ username, password }, callback) => {
+      try {
+        const authResult = await createUser(username, password);
+
+        if (!authResult.ok) {
+          if (callback) callback(authResult);
+          return;
+        }
+
+        const onlineResult = registerUser(authResult.username, socket.id);
+
+        if (!onlineResult.ok) {
+          if (callback) callback(onlineResult);
+          return;
+        }
+
+        if (callback) {
+          callback({
+            ok: true,
+            message: "נרשמת בהצלחה.",
+            username: authResult.username
+          });
+        }
+
+        io.emit("users:update", getPublicUsers());
+      } catch {
+        if (callback) {
+          callback({
+            ok: false,
+            message: "אירעה שגיאה במהלך ההרשמה."
+          });
+        }
+      }
+    });
+
+    socket.on("auth:login", async ({ username, password }, callback) => {
+      try {
+        const authResult = await loginUser(username, password);
+
+        if (!authResult.ok) {
+          if (callback) callback(authResult);
+          return;
+        }
+
+        const onlineResult = registerUser(authResult.username, socket.id);
+
+        if (!onlineResult.ok) {
+          if (callback) callback(onlineResult);
+          return;
+        }
+
+        if (callback) {
+          callback({
+            ok: true,
+            message: "התחברת בהצלחה.",
+            username: authResult.username
+          });
+        }
+
+        io.emit("users:update", getPublicUsers());
+      } catch {
+        if (callback) {
+          callback({
+            ok: false,
+            message: "אירעה שגיאה במהלך ההתחברות."
+          });
+        }
+      }
+    });
+
+    socket.on("auth:delete", async ({ username, password }, callback) => {
+      try {
+        const deleteResult = await deleteUser(username, password);
+
+        if (!deleteResult.ok) {
+          if (callback) callback(deleteResult);
+          return;
+        }
+
+        unregisterUser(socket.id);
+
+        if (callback) {
+          callback({
+            ok: true,
+            message: "המשתמש נמחק בהצלחה."
+          });
+        }
+
+        io.emit("users:update", getPublicUsers());
+      } catch {
+        if (callback) {
+          callback({
+            ok: false,
+            message: "אירעה שגיאה במהלך מחיקת המשתמש."
+          });
+        }
+      }
+    });
+
     socket.on("user:register", ({ username }, callback) => {
       const result = registerUser(username, socket.id);
       if (callback) callback(result);
@@ -313,4 +416,7 @@ app.prepare().then(() => {
   server.listen(port, host, () => {
     console.log(`> Ready on http://${host}:${port}`);
   });
+}).catch((error) => {
+  console.error("Startup failed:", error);
+  process.exit(1);
 });
