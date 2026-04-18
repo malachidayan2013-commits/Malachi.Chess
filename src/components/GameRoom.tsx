@@ -191,7 +191,7 @@ export default function GameRoom({ roomId }: { roomId: string }) {
         style={{
           minHeight: "100vh",
           background: "var(--bg)",
-          padding: "32px 24px",
+          padding: "32px 16px",
           direction: "rtl",
           fontFamily: "Arial, sans-serif",
           color: "var(--text)"
@@ -229,7 +229,7 @@ export default function GameRoom({ roomId }: { roomId: string }) {
         style={{
           minHeight: "100vh",
           background: "var(--bg)",
-          padding: "32px 24px",
+          padding: "32px 16px",
           direction: "rtl",
           fontFamily: "Arial, sans-serif",
           color: "var(--text)"
@@ -245,7 +245,7 @@ export default function GameRoom({ roomId }: { roomId: string }) {
       style={{
         minHeight: "100vh",
         background: "var(--bg)",
-        padding: "32px 24px",
+        padding: "24px 12px",
         direction: "rtl",
         fontFamily: "Arial, sans-serif",
         color: "var(--text)"
@@ -257,8 +257,9 @@ export default function GameRoom({ roomId }: { roomId: string }) {
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
-            marginBottom: 24,
-            gap: 16
+            marginBottom: 20,
+            gap: 16,
+            flexWrap: "wrap"
           }}
         >
           <div>
@@ -301,9 +302,10 @@ export default function GameRoom({ roomId }: { roomId: string }) {
         ) : null}
 
         <div
+          className="game-grid"
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 320px",
+            gridTemplateColumns: "minmax(0, 1fr) 320px",
             gap: 20,
             alignItems: "start"
           }}
@@ -313,17 +315,18 @@ export default function GameRoom({ roomId }: { roomId: string }) {
               background: "var(--bg-elevated)",
               border: "1px solid var(--border)",
               borderRadius: 24,
-              padding: 24,
+              padding: 16,
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
-              gap: 14,
-              boxShadow: "var(--shadow)"
+              gap: 12,
+              boxShadow: "var(--shadow)",
+              minWidth: 0
             }}
           >
             <div
               style={{
-                width: 648,
+                width: "min(100%, 640px)",
                 background: "var(--bg-soft)",
                 border: "1px solid var(--border)",
                 borderRadius: 12,
@@ -346,7 +349,7 @@ export default function GameRoom({ roomId }: { roomId: string }) {
 
             <div
               style={{
-                width: 648,
+                width: "min(100%, 640px)",
                 background: "var(--bg-soft)",
                 border: "1px solid var(--border)",
                 borderRadius: 12,

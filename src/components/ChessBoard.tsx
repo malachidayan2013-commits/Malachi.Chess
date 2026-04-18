@@ -334,7 +334,15 @@ export default function ChessBoard({
 
   return (
     <>
-      <div style={{ display: "flex", flexDirection: "column", gap: 16, alignItems: "center" }}>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 16,
+          alignItems: "center",
+          width: "100%"
+        }}
+      >
         <div
           style={{
             padding: "10px 18px",
@@ -352,10 +360,12 @@ export default function ChessBoard({
         <div
           style={{
             position: "relative",
+            width: "min(100%, 640px)",
+            aspectRatio: "1 / 1",
             display: "grid",
-            gridTemplateColumns: "repeat(8, 80px)",
+            gridTemplateColumns: "repeat(8, 1fr)",
             border: "4px solid #7A5230",
-            width: "fit-content"
+            boxSizing: "border-box"
           }}
         >
           {displayedRows.flatMap((row, displayRowIndex) =>
@@ -422,12 +432,13 @@ export default function ChessBoard({
                   minWidth: 280,
                   textAlign: "center",
                   boxShadow: "0 24px 60px rgba(0,0,0,0.28)",
-                  animation: "result-pop 180ms ease-out"
+                  animation: "result-pop 180ms ease-out",
+                  maxWidth: "90%"
                 }}
               >
                 <div
                   style={{
-                    fontSize: "2.1rem",
+                    fontSize: "clamp(1.3rem, 4vw, 2.1rem)",
                     fontWeight: 900,
                     marginBottom: 10
                   }}

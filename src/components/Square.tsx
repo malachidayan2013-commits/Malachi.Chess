@@ -1,165 +1,155 @@
 "use client";
 
-import Piece from "./Piece";
-
 type PieceColor = "white" | "brown";
 type PieceType = "king" | "queen" | "rook" | "bishop" | "knight" | "pawn";
 
-type SquarePiece =
+type BoardPiece =
   | {
       color: PieceColor;
       type: PieceType;
     }
   | null;
 
-type Props = {
-  isDark: boolean;
-  piece: SquarePiece;
-  selected?: boolean;
-  canMove?: boolean;
-  canCapture?: boolean;
-  inCheck?: boolean;
-  isLastMove?: boolean;
-  onClick?: () => void;
-  fileLabel?: string;
-  rankLabel?: string;
-};
+function getPieceSymbol(piece: BoardPiece) {
+  if (!piece) return "";
+
+  const map = {
+    white: {
+      king: "♔",
+      queen: "♕",
+      rook: "♖",
+      bishop: "♗",
+      knight: "♘",
+      pawn: "♙"
+    },
+    brown: {
+      king: "♚",
+      queen: "♛",
+      rook: "♜",
+      bishop: "♝",
+      knight: "♞",
+      pawn: "♟"
+    }
+  };
+
+  return map[piece.color][piece.type];
+}
 
 export default function Square({
   isDark,
   piece,
-  selected = false,
-  canMove = false,
-  canCapture = false,
-  inCheck = false,
-  isLastMove = false,
-  onClick,
+  selected,
+  canMove,
+  canCapture,
+  inCheck,
+  isLastMove,
   fileLabel,
-  rankLabel
-}: Props) {
-  const baseColor = isDark ? "#B98B66" : "#F0D9B5";
-
-  let backgroundColor = baseColor;
-
-  if (isLastMove) backgroundColor = isDark ? "#C8A34F" : "#E9D66B";
-  if (selected) backgroundColor = "#1F6F43";
-  if (inCheck) backgroundColor = "#D9534F";
-
-  const labelColor = isDark ? "#F0D9B5" : "#B98B66";
-
+  rankLabel,
+  onClick
+}: {
+  isDark: boolean;
+  piece: BoardPiece;
+  selected: boolean;
+  canMove: boolean;
+  canCapture: boolean;
+  inCheck: boolean;
+  isLastMove: boolean;
+  fileLabel?: string;
+  rankLabel?: string;
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
       style={{
-        width: 80,
-        height: 80,
-        backgroundColor,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
+        position: "relative",
+        width: "100%",
+        aspectRatio: "1 / 1",
         border: "none",
         padding: 0,
         margin: 0,
-        position: "relative",
-        cursor: "pointer"
+        background: inCheck
+          ? "#d95c5c"
+          : selected
+          ? "#7fbe6f"
+          : isLastMove
+          ? isDark
+            ? "#9f8b55"
+            : "#d8c98f"
+          : isDark
+          ? "#8b5a3c"
+          : "#f3e2c7",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        cursor: "pointer",
+        userSelect: "none"
       }}
     >
-      {piece ? <Piece color={piece.color} type={piece.type} /> : null}
+      {piece ? (
+        <span
+          style={{
+            fontSize: "clamp(1.2rem, 5vw, 2.7rem)",
+            lineHeight: 1,
+            filter: "drop-shadow(0 1px 1px rgba(0,0,0,0.25))"
+          }}
+        >
+          {getPieceSymbol(piece)}
+        </span>
+      ) : null}
 
-      {rankLabel ? (
+      {canMove ? (
         <span
           style={{
             position: "absolute",
-            top: 4,
-            right: 6,
-            fontSize: 14,
-            fontWeight: 700,
-            color: labelColor,
-            pointerEvents: "none",
-            userSelect: "none"
+            width: "18%",
+            height: "18%",
+            borderRadius: "50%",
+            background: "rgba(20,20,20,0.28)"
           }}
-        >
-          {rankLabel}
-        </span>
+        />
+      ) : null}
+
+      {canCapture ? (
+        <span
+          style={{
+            position: "absolute",
+            inset: "6%",
+            borderRadius: "50%",
+            border: "4px solid rgba(20,20,20,0.35)"
+          }}
+        />
       ) : null}
 
       {fileLabel ? (
         <span
           style={{
             position: "absolute",
-            bottom: 4,
-            left: 6,
-            fontSize: 14,
+            bottom: "4%",
+            left: "6%",
+            fontSize: "clamp(0.5rem, 1.6vw, 0.82rem)",
             fontWeight: 700,
-            color: labelColor,
-            pointerEvents: "none",
-            userSelect: "none"
+            color: isDark ? "#f7ecdc" : "#5b3a25"
           }}
         >
           {fileLabel}
         </span>
       ) : null}
 
-      {canMove && !piece ? (
+      {rankLabel ? (
         <span
           style={{
-            width: 18,
-            height: 18,
-            borderRadius: "50%",
-            background: "rgba(20,20,20,0.35)",
-            position: "absolute"
+            position: "absolute",
+            top: "4%",
+            right: "6%",
+            fontSize: "clamp(0.5rem, 1.6vw, 0.82rem)",
+            fontWeight: 700,
+            color: isDark ? "#f7ecdc" : "#5b3a25"
           }}
-        />
-      ) : null}
-
-      {canCapture ? (
-        <>
-          <span
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: 0,
-              height: 0,
-              borderTop: "14px solid rgba(20,20,20,0.8)",
-              borderRight: "14px solid transparent"
-            }}
-          />
-          <span
-            style={{
-              position: "absolute",
-              top: 0,
-              right: 0,
-              width: 0,
-              height: 0,
-              borderTop: "14px solid rgba(20,20,20,0.8)",
-              borderLeft: "14px solid transparent"
-            }}
-          />
-          <span
-            style={{
-              position: "absolute",
-              bottom: 0,
-              left: 0,
-              width: 0,
-              height: 0,
-              borderBottom: "14px solid rgba(20,20,20,0.8)",
-              borderRight: "14px solid transparent"
-            }}
-          />
-          <span
-            style={{
-              position: "absolute",
-              bottom: 0,
-              right: 0,
-              width: 0,
-              height: 0,
-              borderBottom: "14px solid rgba(20,20,20,0.8)",
-              borderLeft: "14px solid transparent"
-            }}
-          />
-        </>
+        >
+          {rankLabel}
+        </span>
       ) : null}
     </button>
   );
